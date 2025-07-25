@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/Screens/add_note_screen.dart';
 
 class WorshipNotesScreen extends StatefulWidget {
   const WorshipNotesScreen({super.key});
@@ -157,7 +158,12 @@ class _WorshipNotesScreenState extends State<WorshipNotesScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.open_in_new, color: Colors.red, size: 24),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => AddNoteScreen()),
+              );
+            },
           ),
           IconButton(
             icon: Icon(Icons.more_vert, color: Colors.white, size: 24),

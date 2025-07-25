@@ -5,6 +5,7 @@ import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Screens/DrawerScreens/how_ro_read_lyrics.dart';
 import 'package:lyrics/Screens/DrawerScreens/privacy_policy.dart';
 import 'package:lyrics/Screens/DrawerScreens/setting_screen.dart';
+import 'package:lyrics/Screens/DrawerScreens/worship_note_screen.dart';
 import 'package:lyrics/Screens/Profile/profile.dart';
 import 'package:lyrics/Screens/DrawerScreens/premium_screen.dart';
 import 'package:lyrics/Screens/music_player.dart';
@@ -409,7 +410,19 @@ class _HomePageState extends State<HomePage> {
                 _buildDrawerItem(Icons.language_outlined, 'Languages'),
                 _buildDrawerItem(Icons.star_outline, 'Featured Songs'),
                 _buildDrawerItem(Icons.bookmark_outline, 'My Set List'),
-                _buildDrawerItem(Icons.note_outlined, 'Worship Notes'),
+                _buildDrawerItem(
+                  Icons.note_outlined,
+                  'Worship Notes',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => WorshipNotesScreen(),
+                      ),
+                    );
+                  },
+                ),
                 _buildDrawerItem(
                   Icons.article_outlined,
                   'How to Read Lyrics',
