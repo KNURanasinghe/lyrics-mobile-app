@@ -8,6 +8,8 @@ import 'package:lyrics/Screens/DrawerScreens/setting_screen.dart';
 import 'package:lyrics/Screens/DrawerScreens/worship_note_screen.dart';
 import 'package:lyrics/Screens/Profile/profile.dart';
 import 'package:lyrics/Screens/DrawerScreens/premium_screen.dart';
+import 'package:lyrics/Screens/all_songs.dart';
+import 'package:lyrics/Screens/language_screen.dart';
 import 'package:lyrics/Screens/music_player.dart';
 import 'package:lyrics/widgets/main_background.dart';
 
@@ -254,7 +256,17 @@ class _HomePageState extends State<HomePage> {
                         padding: EdgeInsets.only(
                           right: index < artists.length - 1 ? 15 : 0,
                         ),
-                        child: _buildArtistCard(artists[index]),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AllSongs(),
+                              ),
+                            );
+                          },
+                          child: _buildArtistCard(artists[index]),
+                        ),
                       );
                     },
                   ),
@@ -406,10 +418,54 @@ class _HomePageState extends State<HomePage> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _buildDrawerItem(Icons.home_outlined, 'Home'),
-                _buildDrawerItem(Icons.language_outlined, 'Languages'),
-                _buildDrawerItem(Icons.star_outline, 'Featured Songs'),
-                _buildDrawerItem(Icons.bookmark_outline, 'My Set List'),
+                _buildDrawerItem(
+                  Icons.home_outlined,
+                  'Home',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => HomePage()),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  Icons.language_outlined,
+                  'Languages',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => LanguageScreen()),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  Icons.star_outline,
+                  'Featured Songs',
+                  onTap: () {
+                    // Navigator.pop(context);
+                    // Navigator.push(
+                    //   context,
+                    //   MaterialPageRoute(
+                    //     builder: (context) => WorshipNotesScreen(),
+                    //   ),
+                    // );
+                  },
+                ),
+                _buildDrawerItem(
+                  Icons.bookmark_outline,
+                  'My Set List',
+                  onTap: () {
+                    // Navigator.pop(context);
+                    // Navigator.push(
+                    //   context,
+                    //   MaterialPageRoute(
+                    //     builder: (context) => WorshipNotesScreen(),
+                    //   ),
+                    // );
+                  },
+                ),
                 _buildDrawerItem(
                   Icons.note_outlined,
                   'Worship Notes',

@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/widgets/main_background.dart';
-
-class Song {
-  final String title;
-  final String artist;
-  final String imagePath;
-
-  Song({required this.title, required this.artist, required this.imagePath});
-}
 
 class AllSongs extends StatelessWidget {
   AllSongs({super.key});
@@ -17,32 +10,32 @@ class AllSongs extends StatelessWidget {
     Song(
       title: "Bad Guy",
       artist: "Billie Eilish",
-      imagePath: "assets/Rectangle 29.png",
+      imageUrl: "assets/Rectangle 29.png",
     ),
     Song(
       title: "Bad Guy",
       artist: "Billie Eilish",
-      imagePath: "assets/Rectangle 29.png",
+      imageUrl: "assets/Rectangle 29.png",
     ),
     Song(
       title: "Bad Guy",
       artist: "Billie Eilish",
-      imagePath: "assets/Rectangle 29.png",
+      imageUrl: "assets/Rectangle 29.png",
     ),
     Song(
       title: "Bad Guy",
       artist: "Billie Eilish",
-      imagePath: "assets/Rectangle 29.png",
+      imageUrl: "assets/Rectangle 29.png",
     ),
     Song(
       title: "Bad Guy",
       artist: "Billie Eilish",
-      imagePath: "assets/Rectangle 29.png",
+      imageUrl: "assets/Rectangle 29.png",
     ),
     Song(
       title: "Bad Guy",
       artist: "Billie Eilish",
-      imagePath: "assets/Rectangle 29.png",
+      imageUrl: "assets/Rectangle 29.png",
     ),
   ];
 
@@ -107,7 +100,7 @@ class SongCard extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               image: DecorationImage(
-                image: AssetImage(song.imagePath),
+                image: AssetImage(song.imageUrl),
                 fit: BoxFit.cover,
               ),
             ),
@@ -188,7 +181,7 @@ class SongCardNetwork extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
-                song.imagePath,
+                song.imageUrl,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
                   return Container(
@@ -279,7 +272,7 @@ class SongCardWithPlay extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               image: DecorationImage(
-                image: AssetImage(song.imagePath),
+                image: AssetImage(song.imageUrl),
                 fit: BoxFit.cover,
               ),
             ),
