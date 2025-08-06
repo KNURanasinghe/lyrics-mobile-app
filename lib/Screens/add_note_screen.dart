@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:lyrics/Service/worship_note_service.dart';
 
 class AddNoteScreen extends StatefulWidget {
-  const AddNoteScreen({super.key});
+  final String? existingNoteId;
+  final String? existingNoteContent;
+
+  const AddNoteScreen({
+    super.key,
+    this.existingNoteId,
+    this.existingNoteContent,
+  });
 
   @override
   State<AddNoteScreen> createState() => _AddNoteScreenState();
@@ -11,10 +20,18 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
   final TextEditingController _noteController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _isKeyboardVisible = false;
+  bool _isSaving = false;
+  final WorshipNotesService _notesService = WorshipNotesService();
 
   @override
   void initState() {
     super.initState();
+
+    // Initialize with existing note content if editing
+    if (widget.existingNoteContent != null) {
+      _noteController.text = widget.existingNoteContent!;
+    }
+
     // Auto focus the text field when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -35,14 +52,90 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
     super.dispose();
   }
 
-  void _saveNote() {
-    if (_noteController.text.trim().isNotEmpty) {
-      // Here you would typically save the note to your database or state management
-      Navigator.of(
-        context,
-      ).pop({'note': _noteController.text.trim(), 'date': DateTime.now()});
-    } else {
+  Future<void> _saveNote() async {
+    if (_noteController.text.trim().isEmpty) {
       Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      if (widget.existingNoteId != null) {
+        // Update existing note
+        final result = await _notesService.updateWorshipNote(
+          noteId: widget.existingNoteId!,
+          note: _noteController.text.trim(),
+        );
+
+        if (result['success']) {
+          Navigator.of(context).pop({'success': true, 'isUpdate': true});
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(result['message'])));
+        }
+      } else {
+        // Create new note
+        final result = await _notesService.createWorshipNote(
+          _noteController.text.trim(),
+        );
+
+        if (result['success']) {
+          Navigator.of(context).pop({'success': true, 'isUpdate': false});
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(result['message'])));
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteNote() async {
+    if (widget.existingNoteId == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final result = await _notesService.deleteWorshipNote(
+        widget.existingNoteId!,
+      );
+
+      if (result['success']) {
+        Navigator.of(context).pop({'success': true, 'deleted': true});
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result['message'])));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 
@@ -58,7 +151,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          'Worship Notes',
+          widget.existingNoteId != null ? 'Edit Note' : 'New Note',
           style: TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -66,17 +159,32 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: _saveNote,
-            child: Text(
-              'Done',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+          if (_isSaving)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: _saveNote,
+              child: Text(
+                'Done',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          ),
           IconButton(
             icon: Icon(Icons.more_vert, color: Colors.white, size: 24),
             onPressed: () {
@@ -141,7 +249,6 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                         size: 20,
                       ),
                       onPressed: () {
-                        // Add bold formatting
                         _insertFormatting('**', '**');
                       },
                     ),
@@ -152,7 +259,6 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                         size: 20,
                       ),
                       onPressed: () {
-                        // Add italic formatting
                         _insertFormatting('*', '*');
                       },
                     ),
@@ -163,7 +269,6 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                         size: 20,
                       ),
                       onPressed: () {
-                        // Add bullet point
                         _insertText('• ');
                       },
                     ),
@@ -174,12 +279,10 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                         size: 20,
                       ),
                       onPressed: () {
-                        // Add quote
                         _insertText('"');
                       },
                     ),
                     Spacer(),
-                    // Word count
                     Text(
                       '${_noteController.text.split(' ').where((word) => word.isNotEmpty).length} words',
                       style: TextStyle(
@@ -270,17 +373,24 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  // Handle copy
+                  Clipboard.setData(ClipboardData(text: _noteController.text));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Note copied to clipboard')),
+                  );
                 },
               ),
-              ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('Delete Note', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteConfirmation();
-                },
-              ),
+              if (widget.existingNoteId != null)
+                ListTile(
+                  leading: Icon(Icons.delete, color: Colors.red),
+                  title: Text(
+                    'Delete Note',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showDeleteConfirmation();
+                  },
+                ),
             ],
           ),
         );
@@ -307,7 +417,7 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.pop(context);
+                  _deleteNote();
                 },
                 child: Text('Delete', style: TextStyle(color: Colors.red)),
               ),

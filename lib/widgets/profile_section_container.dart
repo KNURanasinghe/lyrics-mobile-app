@@ -8,7 +8,7 @@ class ProfileSectionContainer extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 412,
+          width: double.infinity,
           height: 346,
           decoration: ShapeDecoration(
             color: const Color(0xFF313439),

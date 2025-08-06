@@ -1,20 +1,110 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/FireBase/auth_service.dart';
+import 'package:lyrics/Models/user_model.dart';
 import 'package:lyrics/Screens/AuthScreens/login_page.dart';
+import 'package:lyrics/Screens/HomeScreen/home_screen.dart';
+import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/widgets/auth_button.dart';
 import 'package:lyrics/widgets/auth_textfeild_container.dart';
 import 'package:lyrics/widgets/auth_via_big_button.dart';
-import 'package:lyrics/widgets/auth_via_buttons.dart';
 import 'package:lyrics/widgets/main_background.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
 
   @override
-  State<SignupPage> createState() => _LoginPageState();
+  State<SignupPage> createState() => _SignupPageState();
 }
 
-class _LoginPageState extends State<SignupPage> {
+class _SignupPageState extends State<SignupPage> {
+  final userService = UserService();
   bool _isAgreed = false;
+  String? errorMessage = '';
+  bool isLoading = false;
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+
+  Future<void> signUp() async {
+    // Validate all fields are filled
+    if (_nameController.text.isEmpty ||
+        _emailController.text.isEmpty ||
+        _phoneController.text.isEmpty ||
+        _passwordController.text.isEmpty ||
+        _confirmPasswordController.text.isEmpty) {
+      setState(() {
+        errorMessage = 'Please fill in all fields';
+      });
+      return;
+    }
+
+    // Validate password match
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() {
+        errorMessage = 'Passwords do not match';
+      });
+      return;
+    }
+
+    // Validate terms agreed
+    if (!_isAgreed) {
+      setState(() {
+        errorMessage = 'Please agree to the Privacy Policy';
+      });
+      return;
+    }
+
+    // Basic email validation
+    if (!_emailController.text.contains('@')) {
+      setState(() {
+        errorMessage = 'Please enter a valid email';
+      });
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+
+    try {
+      final newUser = UserModel(
+        fullname: _nameController.text,
+        email: _emailController.text,
+        phonenumber: _phoneController.text,
+        password: _passwordController.text,
+      );
+
+      final result = await userService.signUp(newUser);
+      if (result['success'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomePage()),
+        );
+      } else {
+        print('Signup failed: ${result['message']}');
+        setState(() {
+          errorMessage = result['message'] ?? 'Signup failed';
+        });
+      }
+    } catch (e) {
+      print('Signup failed: $e');
+      setState(() {
+        errorMessage = 'An error occurred: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -31,7 +121,6 @@ class _LoginPageState extends State<SignupPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(height: MediaQuery.of(context).size.height * 0.13),
-                  // Add your login form widgets here
                   Text(
                     'Create\nAccount',
                     style: TextStyle(
@@ -40,7 +129,6 @@ class _LoginPageState extends State<SignupPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   Text(
                     'Join Us for Premium Experience',
                     style: TextStyle(
@@ -49,21 +137,24 @@ class _LoginPageState extends State<SignupPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+
                   SizedBox(height: MediaQuery.of(context).size.height * 0.05),
                   AuthViaBigButton(
                     name: 'Continue with Google',
                     path: 'assets/Google.png',
+                    ontap: () {},
+                    isLoading: isLoading,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.03),
                   AuthViaBigButton(
                     name: 'Continue with Apple',
                     path: 'assets/AppleInc.png',
+                    ontap: () {},
+                    isLoading: false,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.01),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10.0,
-                    ), // Match main column padding
+                    padding: const EdgeInsets.symmetric(horizontal: 10.0),
                     child: Center(
                       child: Row(
                         children: [
@@ -92,34 +183,51 @@ class _LoginPageState extends State<SignupPage> {
                               color: Color(0xFF828282),
                             ),
                           ),
-                          SizedBox(width: 10),
                         ],
                       ),
                     ),
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.04),
                   AuthTextfeildContainer(
+                    controller: _nameController,
                     hintText: 'Fullname',
                     icon: Icons.person,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.013),
                   AuthTextfeildContainer(
+                    controller: _phoneController,
                     hintText: 'Phone Number',
-                    icon: Icons.mail,
+                    icon: Icons.phone,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.013),
-                  AuthTextfeildContainer(hintText: 'Email', icon: Icons.mail),
+                  AuthTextfeildContainer(
+                    hintText: 'Email',
+                    icon: Icons.mail,
+                    controller: _emailController,
+                  ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.013),
                   AuthTextfeildContainer(
+                    controller: _passwordController,
                     hintText: 'Password',
                     icon: Icons.lock,
+                    // isPassword: true,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.013),
                   AuthTextfeildContainer(
+                    controller: _confirmPasswordController,
                     hintText: 'Confirm Password',
                     icon: Icons.lock,
+                    isPassword: true,
                   ),
-                  // Then replace your current Align widget with checkbox with this:
+                  if (errorMessage!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16.0),
+                      child: Text(
+                        errorMessage!,
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  SizedBox(height: MediaQuery.of(context).size.height * 0.02),
                   Align(
                     alignment: Alignment.centerRight,
                     child: Padding(
@@ -160,15 +268,17 @@ class _LoginPageState extends State<SignupPage> {
                     ),
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.05),
-                  // Example of a button
-                  AuthButton(text: 'Sign Up'),
-
+                  AuthButton(
+                    text: 'Sign Up',
+                    onTap: signUp,
+                    // isLoading: isLoading,
+                  ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.02),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Don\'t have an account?',
+                        'Already have an account?',
                         style: TextStyle(
                           color: Color(0xFF9E9E9E),
                           fontSize: 15,

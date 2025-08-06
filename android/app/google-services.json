@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "993907057045",
+    "project_id": "lyrics-41d9b",
+    "storage_bucket": "lyrics-41d9b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:993907057045:android:610b00273ab7ea18f9169c",
+        "android_client_info": {
+          "package_name": "com.example.lyrics"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "993907057045-fu1en3hpvvchlbhu306pbc9ke02eqj69.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.lyrics",
+            "certificate_hash": "634c24750fb93a15a4907403ea6153039962153b"
+          }
+        },
+        {
+          "client_id": "993907057045-obhj1icbhdkpjq4mjecclfou42uniroc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBcINSXcQJRJXKX7884Z5CCKWJ9iPGL5_g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "993907057045-obhj1icbhdkpjq4mjecclfou42uniroc.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "993907057045-6pjp3hgdlvacl24rghjnt853k9eu2oof.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.lyrics"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

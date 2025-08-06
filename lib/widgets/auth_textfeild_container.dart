@@ -1,13 +1,25 @@
 import 'package:flutter/material.dart';
 
-class AuthTextfeildContainer extends StatelessWidget {
-  IconData icon; // Default icon
-  String hintText; // Default hint text
-  AuthTextfeildContainer({
+class AuthTextfeildContainer extends StatefulWidget {
+  final TextEditingController? controller;
+  final IconData icon;
+  final String hintText;
+  final bool isPassword;
+
+  const AuthTextfeildContainer({
     super.key,
     required this.icon,
     required this.hintText,
+    required this.controller,
+    this.isPassword = false,
   });
+
+  @override
+  State<AuthTextfeildContainer> createState() => _AuthTextfeildContainerState();
+}
+
+class _AuthTextfeildContainerState extends State<AuthTextfeildContainer> {
+  bool _obscureText = true;
 
   @override
   Widget build(BuildContext context) {
@@ -25,10 +37,27 @@ class AuthTextfeildContainer extends StatelessWidget {
               ),
             ),
             child: TextField(
+              controller: widget.controller,
+              obscureText: widget.isPassword ? _obscureText : false,
               decoration: InputDecoration(
                 border: InputBorder.none,
-                prefixIcon: Icon(icon),
-                hintText: hintText,
+                prefixIcon: Icon(widget.icon),
+                suffixIcon:
+                    widget.isPassword
+                        ? IconButton(
+                          icon: Icon(
+                            _obscureText
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureText = !_obscureText;
+                            });
+                          },
+                        )
+                        : null,
+                hintText: widget.hintText,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 20,

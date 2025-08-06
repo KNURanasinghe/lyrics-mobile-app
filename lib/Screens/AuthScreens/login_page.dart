@@ -1,6 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:lyrics/FireBase/auth_service.dart';
+import 'package:lyrics/Models/user_model.dart';
 import 'package:lyrics/Screens/AuthScreens/signup_page.dart';
 import 'package:lyrics/Screens/HomeScreen/home_screen.dart';
+import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/widgets/auth_button.dart';
 import 'package:lyrics/widgets/auth_textfeild_container.dart';
 import 'package:lyrics/widgets/auth_via_buttons.dart';
@@ -14,6 +18,83 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final userService = UserService();
+  bool isLoading = false;
+  String? errorMessage;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  Future<void> signInWithEmailAndPassword() async {
+    try {
+      await FireBaseAuthServices().signInWithEmailAndPassword(
+        _emailController.text,
+        _passwordController.text,
+      );
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        errorMessage = e.message;
+      });
+    }
+  }
+
+  Future<void> signIn() async {
+    // Validate all fields are filled
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() {
+        errorMessage = 'Please fill in all fields';
+      });
+      return;
+    }
+
+    // Validate terms agreed
+    // if (!_isAgreed) {
+    //   setState(() {
+    //     errorMessage = 'Please agree to the Privacy Policy';
+    //   });
+    //   return;
+    // }
+
+    // Basic email validation
+    if (!_emailController.text.contains('@')) {
+      setState(() {
+        errorMessage = 'Please enter a valid email';
+      });
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+
+    try {
+      final result = await userService.login(
+        emailOrPhone: _emailController.text,
+        password: _passwordController.text,
+      );
+      print('Login result: ${result['user']}');
+      if (result['success'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomePage()),
+        );
+      } else {
+        print('Signup failed: ${result['message']}');
+        setState(() {
+          errorMessage = result['message'] ?? 'Signup failed';
+        });
+      }
+    } catch (e) {
+      print('Signup failed: $e');
+      setState(() {
+        errorMessage = 'An error occurred: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -50,11 +131,13 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.1),
                   AuthTextfeildContainer(
+                    controller: _emailController,
                     hintText: 'Email or Phone Number',
                     icon: Icons.email,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.04),
                   AuthTextfeildContainer(
+                    controller: _passwordController,
                     hintText: 'Password',
                     icon: Icons.lock,
                   ),
@@ -76,15 +159,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.07),
                   // Example of a button
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => HomePage()),
-                      );
-                    },
-                    child: AuthButton(text: 'Login'),
-                  ),
+                  AuthButton(text: 'Login', onTap: signIn),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.03),
                   Center(
                     child: Text(

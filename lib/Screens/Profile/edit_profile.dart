@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:lyrics/widgets/main_background.dart';
-import 'package:lyrics/widgets/profile_section_container.dart';
+import 'package:lyrics/Models/user_model.dart';
+import 'package:lyrics/Service/user_service.dart';
 
 class EditProfile extends StatefulWidget {
   const EditProfile({super.key});
@@ -14,46 +14,20 @@ class EditProfile extends StatefulWidget {
 class _EditProfileState extends State<EditProfile> {
   File? _selectedImage;
   final ImagePicker _picker = ImagePicker();
+  final UserService _userService = UserService();
 
-  final TextEditingController _nameController = TextEditingController(
-    text: 'Tharindu Nipun',
-  );
-  final TextEditingController _emailController = TextEditingController(
-    text: 'tharindunipun@gmail.com',
-  );
-  final TextEditingController _countryController = TextEditingController(
-    text: 'Sri Lanka',
-  );
-  final TextEditingController _phoneController = TextEditingController(
-    text: '+9476 666 6666',
-  );
-  final TextEditingController _dobController = TextEditingController(
-    text: '12-09-2002',
-  );
-  final TextEditingController _genderController = TextEditingController(
-    text: 'Male',
-  );
-  final TextEditingController _languageController = TextEditingController(
-    text: 'English',
-  );
+  String? _apiDateOfBirth;
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _countryController = TextEditingController();
+  final TextEditingController _dobController = TextEditingController();
+  final TextEditingController _genderController = TextEditingController();
+  final TextEditingController _languageController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
-  List<String> selectedInterests = [
-    'Worship',
-    'Gospel',
-    'Hymns',
-    'Contemporary',
-    'Instrumental',
-    'Choir',
-    'Praise & Worship',
-    'Kids Songs',
-    'Devotional',
-    'Tamil Songs',
-    'English Songs',
-    'Sinhala Songs',
-  ];
-
-  // Available interests that can be added
+  List<String> selectedInterests = [];
   List<String> availableInterests = [
     'Worship',
     'Gospel',
@@ -81,7 +55,77 @@ class _EditProfileState extends State<EditProfile> {
     'Orchestra',
   ];
 
-  void _saveProfile() {
+  bool _isLoading = true;
+  bool _isUpdating = false;
+  UserModel? _currentUser;
+  String? _profileImageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Load basic user info
+      final userResult = await _userService.getCurrentUserProfile();
+      if (userResult['success'] && userResult['user'] != null) {
+        _currentUser = userResult['user'] as UserModel;
+        _nameController.text = _currentUser!.fullname;
+        _emailController.text = _currentUser!.email;
+        _phoneController.text = _currentUser!.phonenumber ?? '';
+      }
+
+      // Load profile details
+      final userId = await UserService.getUserID();
+      final profileResult = await _userService.getFullProfile(
+        userId.toString(),
+      );
+
+      if (profileResult['success'] && profileResult['profile'] != null) {
+        final profile = profileResult['profile'];
+        _countryController.text = profile['profile']['country'] ?? '';
+
+        // _dobController.text = profile['profile']['date_of_birth'] ?? '';
+        if (profile['profile']['date_of_birth'] != null) {
+          // Parse the ISO date string (e.g., "2025-08-04T00:00:00.000Z")
+          DateTime dob = DateTime.parse(profile['profile']['date_of_birth']);
+
+          // Format for display (DD-MM-YYYY)
+          String displayDate =
+              "${dob.day.toString().padLeft(2, '0')}-"
+              "${dob.month.toString().padLeft(2, '0')}-"
+              "${dob.year}";
+
+          // Update the display controller
+          _dobController.text = displayDate;
+
+          // Store API format (YYYY-MM-DD)
+          _apiDateOfBirth =
+              "${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}";
+        }
+
+        _genderController.text = profile['profile']['gender'] ?? 'Male';
+        _languageController.text =
+            profile['profile']['preferred_language'] ?? 'English';
+        _bioController.text = profile['profile']['bio'] ?? '';
+        _profileImageUrl = profile['profile']['profile_image'];
+        selectedInterests = List<String>.from(profile['interests'] ?? []);
+      }
+      print(
+        'dob ${_countryController.text} and  ${profileResult['profile']['profile']['country']}',
+      );
+    } catch (e) {
+      _showSnackBar('Failed to load profile: ${e.toString()}');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _saveProfile() async {
     if (_nameController.text.isEmpty) {
       _showSnackBar('Name is required');
       return;
@@ -92,21 +136,63 @@ class _EditProfileState extends State<EditProfile> {
       return;
     }
 
-    Map<String, dynamic> profileData = {
-      'name': _nameController.text,
-      'email': _emailController.text,
-      'country': _countryController.text,
-      'phone': _phoneController.text,
-      'dateOfBirth': _dobController.text,
-      'gender': _genderController.text,
-      'language': _languageController.text,
-      'interests': selectedInterests,
-      'bio': _bioController.text,
-      'profileImage': _selectedImage?.path, // Include image path
-    };
+    setState(() => _isUpdating = true);
 
-    _showSnackBar('Profile saved successfully!');
-    Navigator.of(context).pop();
+    try {
+      // Upload image first if selected
+      if (_selectedImage != null) {
+        final userId = await UserService.getUserID();
+        final uploadResult = await _userService.uploadProfileImage(
+          int.parse(userId.toString()),
+          _selectedImage!,
+        );
+
+        if (!uploadResult['success']) {
+          throw Exception(uploadResult['message'] ?? 'Failed to upload image');
+        }
+
+        // Update the profile image URL if upload was successful
+        _profileImageUrl = uploadResult['imageUrl'];
+      }
+
+      // Update basic user info
+      final userResult = await _userService.updateCurrentUserProfile(
+        fullname: _nameController.text,
+        email: _emailController.text,
+        phonenumber: _phoneController.text,
+      );
+
+      if (!userResult['success']) {
+        throw Exception(
+          userResult['message'] ?? 'Failed to update basic profile',
+        );
+      }
+
+      // Update profile details
+      final userId = await UserService.getUserID();
+      final profileResult = await _userService.updateFullProfile(
+        userId: userId,
+        country: _countryController.text,
+        dateOfBirth: _apiDateOfBirth,
+        gender: _genderController.text,
+        preferredLanguage: _languageController.text,
+        bio: _bioController.text,
+        interests: selectedInterests,
+      );
+
+      if (profileResult['success']) {
+        _showSnackBar('Profile updated successfully!');
+        Navigator.of(context).pop(true);
+      } else {
+        throw Exception(
+          profileResult['message'] ?? 'Failed to update profile details',
+        );
+      }
+    } catch (e) {
+      _showSnackBar('Error: ${e.toString()}');
+    } finally {
+      setState(() => _isUpdating = false);
+    }
   }
 
   void _showSnackBar(String message) {
@@ -179,20 +265,46 @@ class _EditProfileState extends State<EditProfile> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final XFile? image = await _picker.pickImage(
+      final XFile? pickedFile = await _picker.pickImage(
         source: source,
         maxWidth: 800,
         maxHeight: 800,
         imageQuality: 80,
       );
 
-      if (image != null) {
+      if (pickedFile != null) {
         setState(() {
-          _selectedImage = File(image.path);
+          _selectedImage = File(pickedFile.path);
         });
+
+        // Immediately upload the image
+        await _uploadImage(File(pickedFile.path));
       }
     } catch (e) {
       _showSnackBar('Error picking image: $e');
+    }
+  }
+
+  Future<void> _uploadImage(File imageFile) async {
+    try {
+      setState(() => _isUpdating = true);
+
+      final userId = await UserService.getUserID();
+      final uploadResult = await _userService.uploadProfileImage(
+        int.parse(userId.toString()),
+        imageFile,
+      );
+
+      if (uploadResult['success']) {
+        _profileImageUrl = uploadResult['imageUrl'];
+        _showSnackBar('Profile picture updated!');
+      } else {
+        throw Exception(uploadResult['message'] ?? 'Failed to upload image');
+      }
+    } catch (e) {
+      _showSnackBar('Error uploading image: $e');
+    } finally {
+      setState(() => _isUpdating = false);
     }
   }
 
@@ -228,9 +340,22 @@ class _EditProfileState extends State<EditProfile> {
     );
 
     if (pickedDate != null) {
-      String formattedDate =
-          "${pickedDate.day.toString().padLeft(2, '0')}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.year}";
-      _dobController.text = formattedDate;
+      // Format for display (DD-MM-YYYY)
+      String displayDate =
+          "${pickedDate.day.toString().padLeft(2, '0')}-"
+          "${pickedDate.month.toString().padLeft(2, '0')}-"
+          "${pickedDate.year}";
+
+      // Format for API (YYYY-MM-DD)
+      String apiDate =
+          "${pickedDate.year}-"
+          "${pickedDate.month.toString().padLeft(2, '0')}-"
+          "${pickedDate.day.toString().padLeft(2, '0')}";
+
+      setState(() {
+        _dobController.text = displayDate; // Show user-friendly format
+        _apiDateOfBirth = apiDate; // Store API format
+      });
     }
   }
 
@@ -349,125 +474,143 @@ class _EditProfileState extends State<EditProfile> {
       appBar: AppBar(
         title: Text(
           'Edit Profile',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 22),
         ),
         backgroundColor: Color(0xFF313439),
-        centerTitle: true,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
+          onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          IconButton(
-            icon: Icon(Icons.check, color: Colors.white, size: 24),
-            onPressed: () {
-              _saveProfile();
-            },
-          ),
+          if (!_isLoading)
+            IconButton(
+              icon:
+                  _isUpdating
+                      ? CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      )
+                      : Icon(Icons.check, color: Colors.white, size: 24),
+              onPressed: _isUpdating ? null : _saveProfile,
+            ),
         ],
       ),
       backgroundColor: Color(0xFF313439),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            SizedBox(height: 20),
-
-            // Profile Photo Section
-            Column(
-              children: [
-                Stack(
+      body:
+          _isLoading
+              ? Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 45,
-                      backgroundImage:
-                          _selectedImage != null
-                              ? FileImage(_selectedImage!)
-                              : AssetImage('assets/profile_image.png')
-                                  as ImageProvider,
-                      backgroundColor: Colors.grey[300],
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _showImageSourceDialog,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.7),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 16,
+                    SizedBox(height: 20),
+                    // Profile Photo Section
+                    Column(
+                      children: [
+                        Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 45,
+                              backgroundImage:
+                                  _selectedImage != null
+                                      ? FileImage(_selectedImage!)
+                                      : (_profileImageUrl != null
+                                              ? NetworkImage(_profileImageUrl!)
+                                              : AssetImage(
+                                                'assets/profile_image.png',
+                                              ))
+                                          as ImageProvider,
+                              backgroundColor: Colors.grey[300],
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: GestureDetector(
+                                onTap: _showImageSourceDialog,
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.7),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.camera_alt,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: _showImageSourceDialog,
+                          child: Text(
+                            _selectedImage != null
+                                ? 'Change Photo'
+                                : 'Add Photo',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                    SizedBox(height: 40),
+                    // About You Section
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 30),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'About You',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          SizedBox(height: 20),
+                          // Editable fields
+                          _buildEditableField('Name', _nameController, true),
+                          _buildEditableField('Email', _emailController, true),
+                          _buildEditableField(
+                            'Phone no.',
+                            _phoneController,
+                            true,
+                          ),
+                          _buildEditableField(
+                            'Country',
+                            _countryController,
+                            true,
+                          ),
+                          _buildDateField('Date of Birth', _dobController),
+                          _buildEditableField(
+                            'Gender',
+                            _genderController,
+                            true,
+                          ),
+                          _buildEditableField(
+                            'Preferred Language',
+                            _languageController,
+                            true,
+                          ),
+                          _buildEditableField(
+                            'Account Type',
+                            TextEditingController(text: 'Pro'),
+                            false,
+                          ),
+                          _buildInterestsSection(),
+                          _buildBioSection(),
+                        ],
                       ),
                     ),
+                    SizedBox(height: 20),
                   ],
                 ),
-                SizedBox(height: 12),
-                GestureDetector(
-                  onTap: _showImageSourceDialog,
-                  child: Text(
-                    _selectedImage != null ? 'Change Photo' : 'Add Photo',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 14),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 40),
-
-            // About You Section
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'About You',
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  SizedBox(height: 20),
-
-                  _buildEditableField('Name', _nameController, true),
-                  _buildEditableField('Email', _emailController, true),
-                  _buildEditableField('Country', _countryController, true),
-                  _buildEditableField('Phone no.', _phoneController, true),
-                  _buildDateField('Date of Birth', _dobController),
-                  _buildEditableField('Gender', _genderController, true),
-                  _buildEditableField(
-                    'Preferred Language',
-                    _languageController,
-                    true,
-                  ),
-                  _buildEditableField(
-                    'Account Type',
-                    TextEditingController(text: 'Pro'),
-                    false,
-                  ),
-                  _buildInterestsSection(),
-                  _buildBioSection(),
-                ],
               ),
-            ),
-
-            SizedBox(height: 20),
-          ],
-        ),
-      ),
     );
   }
 

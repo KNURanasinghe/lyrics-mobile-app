@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lyrics/Screens/add_note_screen.dart';
+import 'package:lyrics/Service/worship_note_service.dart'
+    show WorshipNotesService;
+import 'package:intl/intl.dart';
 
 class WorshipNotesScreen extends StatefulWidget {
   const WorshipNotesScreen({super.key});
@@ -9,71 +12,105 @@ class WorshipNotesScreen extends StatefulWidget {
 }
 
 class _WorshipNotesScreenState extends State<WorshipNotesScreen> {
+  final WorshipNotesService _notesService = WorshipNotesService();
   String selectedFilter = 'All';
+  List<NoteItem> allNotes = [];
+  bool isLoading = true;
+  bool hasError = false;
 
-  // Sample data
-  final List<NoteItem> allNotes = [
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.now().subtract(Duration(days: 1)),
-      category: 'Previous 7 Days',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-06-28'),
-      category: 'Previous 30 Days',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-06-20'),
-      category: 'Previous 30 Days',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-06-08'),
-      category: 'Previous 30 Days',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-05-28'),
-      category: 'May',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-05-20'),
-      category: 'May',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-05-08'),
-      category: 'May',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-05-05'),
-      category: 'May',
-    ),
-    NoteItem(
-      title: 'New Note',
-      date: DateTime.parse('2025-04-28'),
-      category: 'April',
-    ),
-  ];
-
-  List<NoteItem> getFilteredNotes() {
-    if (selectedFilter == 'All') return allNotes;
-    return allNotes.where((note) => note.category == selectedFilter).toList();
+  @override
+  void initState() {
+    super.initState();
+    _fetchNotes();
   }
 
-  Map<String, List<NoteItem>> groupNotesByCategory() {
+  Future<void> _fetchNotes() async {
+    setState(() {
+      isLoading = true;
+      hasError = false;
+    });
+
+    try {
+      final result = await _notesService.getUserWorshipNotes();
+      if (result['success']) {
+        final notesData = result['notes'] as List<dynamic>;
+        setState(() {
+          allNotes =
+              notesData.map((note) {
+                return NoteItem(
+                  id: note['id'].toString(),
+                  title: note['note'] ?? 'No title',
+                  date: DateTime.parse(note['created_at']),
+                  content: note['note'],
+                );
+              }).toList();
+        });
+      } else {
+        setState(() {
+          hasError = true;
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result['message'])));
+      }
+    } catch (e) {
+      setState(() {
+        hasError = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load notes: $e')));
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  List<NoteItem> getFilteredNotes() {
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(Duration(days: 7));
+    final thirtyDaysAgo = now.subtract(Duration(days: 30));
+
+    if (selectedFilter == 'All') return allNotes;
+    if (selectedFilter == 'Previous 7 Days') {
+      return allNotes.where((note) => note.date.isAfter(sevenDaysAgo)).toList();
+    }
+    if (selectedFilter == 'Previous 30 Days') {
+      return allNotes
+          .where((note) => note.date.isAfter(thirtyDaysAgo))
+          .toList();
+    }
+    return allNotes;
+  }
+
+  Map<String, List<NoteItem>> groupNotesByDate() {
     final filteredNotes = getFilteredNotes();
     final Map<String, List<NoteItem>> grouped = {};
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(Duration(days: 1));
 
     for (final note in filteredNotes) {
-      if (!grouped.containsKey(note.category)) {
-        grouped[note.category] = [];
+      final noteDate = DateTime(note.date.year, note.date.month, note.date.day);
+      String category;
+
+      if (noteDate == today) {
+        category = 'Today';
+      } else if (noteDate == yesterday) {
+        category = 'Yesterday';
+      } else if (noteDate.isAfter(now.subtract(Duration(days: 7)))) {
+        category = 'Previous 7 Days';
+      } else if (noteDate.isAfter(now.subtract(Duration(days: 30)))) {
+        category = 'Previous 30 Days';
+      } else {
+        category = DateFormat('MMMM yyyy').format(noteDate);
       }
-      grouped[note.category]!.add(note);
+
+      if (!grouped.containsKey(category)) {
+        grouped[category] = [];
+      }
+      grouped[category]!.add(note);
     }
 
     return grouped;
@@ -102,13 +139,7 @@ class _WorshipNotesScreenState extends State<WorshipNotesScreen> {
                 ),
               ),
               SizedBox(height: 20),
-              ...[
-                'All',
-                'Previous 7 Days',
-                'Previous 30 Days',
-                'May',
-                'April',
-              ].map(
+              ...['All', 'Previous 7 Days', 'Previous 30 Days'].map(
                 (filter) => ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
@@ -136,7 +167,7 @@ class _WorshipNotesScreenState extends State<WorshipNotesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final groupedNotes = groupNotesByCategory();
+    final groupedNotes = groupNotesByDate();
 
     return Scaffold(
       backgroundColor: Color(0xFF1E3A5F),
@@ -157,12 +188,15 @@ class _WorshipNotesScreenState extends State<WorshipNotesScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.open_in_new, color: Colors.red, size: 24),
-            onPressed: () {
-              Navigator.push(
+            icon: Icon(Icons.add, color: Colors.white, size: 24),
+            onPressed: () async {
+              final result = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => AddNoteScreen()),
               );
+              if (result != null && result['success']) {
+                _fetchNotes(); // Refresh the list after adding a new note
+              }
             },
           ),
           IconButton(
@@ -179,113 +213,177 @@ class _WorshipNotesScreenState extends State<WorshipNotesScreen> {
             colors: [Color(0xFF1E3A5F), Color(0xFF0F1B2E)],
           ),
         ),
-        child: ListView(
-          padding: EdgeInsets.all(16),
-          children: [
-            ...groupedNotes.entries.map((entry) {
-              final category = entry.key;
-              final notes = entry.value;
+        child:
+            isLoading
+                ? Center(child: CircularProgressIndicator(color: Colors.white))
+                : hasError
+                ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Failed to load notes',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _fetchNotes,
+                        child: Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+                : allNotes.isEmpty
+                ? Center(
+                  child: Text(
+                    'No notes found',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                )
+                : RefreshIndicator(
+                  onRefresh: _fetchNotes,
+                  color: Colors.white,
+                  backgroundColor: Color(0xFF1E3A5F),
+                  child: ListView(
+                    padding: EdgeInsets.all(16),
+                    children: [
+                      ...groupedNotes.entries.map((entry) {
+                        final category = entry.key;
+                        final notes = entry.value;
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Category Header
-                  Padding(
-                    padding: EdgeInsets.only(
-                      bottom: 12,
-                      top: category == groupedNotes.keys.first ? 0 : 24,
-                    ),
-                    child: Text(
-                      category,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  // Notes in this category
-                  ...notes.map(
-                    (note) => Container(
-                      margin: EdgeInsets.only(bottom: 8),
-                      padding: EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.1),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  note.title,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Category Header
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom: 12,
+                                top:
+                                    category == groupedNotes.keys.first
+                                        ? 0
+                                        : 24,
+                              ),
+                              child: Text(
+                                category,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
                                 ),
-                                SizedBox(height: 4),
-                                Text(
-                                  _formatDate(note.date),
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            color: Colors.white.withOpacity(0.5),
-                            size: 16,
-                          ),
-                        ],
-                      ),
-                    ),
+                            // Notes in this category
+                            ...notes.map(
+                              (note) => GestureDetector(
+                                onTap: () async {
+                                  final result = await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (context) => AddNoteScreen(
+                                            existingNoteId: note.id,
+                                            existingNoteContent: note.content,
+                                          ),
+                                    ),
+                                  );
+                                  if (result != null && result['success']) {
+                                    _fetchNotes(); // Refresh after editing
+                                  }
+                                },
+                                child: Container(
+                                  margin: EdgeInsets.only(bottom: 8),
+                                  padding: EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.1),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              note.title.length > 50
+                                                  ? '${note.title.substring(0, 50)}...'
+                                                  : note.title,
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            SizedBox(height: 4),
+                                            Text(
+                                              _formatDate(note.date),
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(
+                                                  0.7,
+                                                ),
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios,
+                                        color: Colors.white.withOpacity(0.5),
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
+                    ],
                   ),
-                ],
-              );
-            }),
-          ],
-        ),
+                ),
       ),
-      // floatingActionButton: FloatingActionButton(
-      //   onPressed: () {
-      //     // Handle add new note
-      //   },
-      //   backgroundColor: Color(0xFF4A90E2),
-      //   child: Icon(Icons.add, color: Colors.white),
-      // ),
     );
   }
 
   String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(Duration(days: 1));
-    final noteDate = DateTime(date.year, date.month, date.day);
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
 
-    if (noteDate == today) {
-      return 'Today';
-    } else if (noteDate == yesterday) {
-      return 'Yesterday';
-    } else {
-      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    }
+    final hour = date.hour % 12;
+    final period = date.hour < 12 ? 'AM' : 'PM';
+
+    return '${months[date.month - 1]} ${date.day}, ${date.year} • '
+        '${hour == 0 ? 12 : hour}:${date.minute.toString().padLeft(2, '0')} $period';
   }
 }
 
 class NoteItem {
+  final String id;
   final String title;
   final DateTime date;
-  final String category;
+  final String content;
 
-  NoteItem({required this.title, required this.date, required this.category});
+  NoteItem({
+    required this.id,
+    required this.title,
+    required this.date,
+    required this.content,
+  });
 }
