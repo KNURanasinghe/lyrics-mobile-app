@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/Service/lyrics_service.dart';
 import 'package:lyrics/widgets/main_background.dart';
 
 class LyricsFormat {
@@ -17,6 +18,7 @@ class HowToReadLyrics extends StatefulWidget {
 
 class _HowToReadLyricsState extends State<HowToReadLyrics> {
   String? selectedFormat;
+  bool isLoading = true;
 
   final List<LyricsFormat> lyricsFormats = [
     LyricsFormat(title: "Tamil Only", value: "tamil_only"),
@@ -32,6 +34,28 @@ class _HowToReadLyricsState extends State<HowToReadLyrics> {
     LyricsFormat(title: "English Transliteration Only", value: "english_only"),
     LyricsFormat(title: "Sinhala Transliteration Only", value: "sinhala_only"),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentFormat();
+  }
+
+  Future<void> _loadCurrentFormat() async {
+    try {
+      final currentFormat = await HowToReadLyricsService.getLyricsFormat();
+      setState(() {
+        selectedFormat = currentFormat;
+        isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading current format: $e');
+      setState(() {
+        selectedFormat = 'tamil_only';
+        isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,249 +79,388 @@ class _HowToReadLyricsState extends State<HowToReadLyrics> {
       ),
       body: MainBAckgound(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 40),
+          child:
+              isLoading
+                  ? const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                  : Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 20),
 
-                // Options list
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: lyricsFormats.length,
-                    itemBuilder: (context, index) {
-                      final format = lyricsFormats[index];
-                      final isSelected = selectedFormat == format.value;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0, left: 20),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                format.title,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight:
-                                      isSelected
-                                          ? FontWeight.w500
-                                          : FontWeight.w400,
-                                ),
-                              ),
+                        // Description text
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.2),
+                              width: 1,
                             ),
-                            // if (isSelected)
-                            //   Icon(
-                            //     Icons.check_circle,
-                            //     color: Colors.white,
-                            //     size: 20,
-                            //   ),
-                          ],
+                          ),
+                          child: const Text(
+                            'Choose how you would like to read song lyrics. Your preference will be saved and applied to all songs.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                              height: 1.4,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                ),
 
-                // Save/Continue button
-                // if (selectedFormat != null)
-                //   Padding(
-                //     padding: const EdgeInsets.only(top: 20),
-                //     child: SizedBox(
-                //       width: double.infinity,
-                //       child: ElevatedButton(
-                //         onPressed: () {
-                //           // Handle save/continue action
-                //           _saveSelectedFormat();
-                //         },
-                //         style: ElevatedButton.styleFrom(
-                //           backgroundColor: Colors.white.withOpacity(0.2),
-                //           foregroundColor: Colors.white,
-                //           padding: const EdgeInsets.symmetric(vertical: 16),
-                //           shape: RoundedRectangleBorder(
-                //             borderRadius: BorderRadius.circular(8),
-                //             side: BorderSide(
-                //               color: Colors.white.withOpacity(0.3),
-                //               width: 1,
-                //             ),
-                //           ),
-                //           elevation: 0,
-                //         ),
-                //         child: const Text(
-                //           'Save Preference',
-                //           style: TextStyle(
-                //             fontSize: 16,
-                //             fontWeight: FontWeight.w500,
-                //           ),
-                //         ),
-                //       ),
-                //     ),
-                //   ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+                        const SizedBox(height: 30),
 
-  void _saveSelectedFormat() {
-    // Handle saving the selected format
-    final selectedFormatData = lyricsFormats.firstWhere(
-      (format) => format.value == selectedFormat,
-    );
+                        // Options list
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: lyricsFormats.length,
+                            itemBuilder: (context, index) {
+                              final format = lyricsFormats[index];
+                              final isSelected = selectedFormat == format.value;
 
-    // You can save to SharedPreferences, send to API, etc.
-    print('Selected format: ${selectedFormatData.title}');
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16.0),
+                                child: GestureDetector(
+                                  onTap: () => _selectFormat(format.value),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 18,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          isSelected
+                                              ? Colors.white.withOpacity(0.15)
+                                              : Colors.white.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color:
+                                            isSelected
+                                                ? Colors.white.withOpacity(0.4)
+                                                : Colors.white.withOpacity(0.2),
+                                        width: isSelected ? 2 : 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        // Radio button indicator
+                                        Container(
+                                          width: 20,
+                                          height: 20,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white.withOpacity(
+                                                0.6,
+                                              ),
+                                              width: 2,
+                                            ),
+                                          ),
+                                          child:
+                                              isSelected
+                                                  ? Center(
+                                                    child: Container(
+                                                      width: 10,
+                                                      height: 10,
+                                                      decoration:
+                                                          const BoxDecoration(
+                                                            shape:
+                                                                BoxShape.circle,
+                                                            color: Colors.white,
+                                                          ),
+                                                    ),
+                                                  )
+                                                  : null,
+                                        ),
 
-    // Show confirmation or navigate back
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Preference saved: ${selectedFormatData.title}'),
-        backgroundColor: Colors.green.withOpacity(0.8),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+                                        const SizedBox(width: 16),
 
-    // Optionally navigate back after a delay
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        Navigator.of(context).pop(selectedFormat);
-      }
-    });
-  }
-}
+                                        // Format title
+                                        Expanded(
+                                          child: Text(
+                                            format.title,
+                                            style: TextStyle(
+                                              color:
+                                                  isSelected
+                                                      ? Colors.white
+                                                      : Colors.white
+                                                          .withOpacity(0.8),
+                                              fontSize: 16,
+                                              fontWeight:
+                                                  isSelected
+                                                      ? FontWeight.w500
+                                                      : FontWeight.w400,
+                                            ),
+                                          ),
+                                        ),
 
-// Alternative simpler version without selection state
-class HowToReadLyricsSimple extends StatelessWidget {
-  const HowToReadLyricsSimple({super.key});
+                                        // Preview indicator for multi-language formats
+                                        if (_isMultiLanguageFormat(
+                                          format.value,
+                                        ))
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange.withOpacity(
+                                                0.2,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              _getLanguageCount(format.value),
+                                              style: const TextStyle(
+                                                color: Colors.orange,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
 
-  final List<String> lyricsFormats = const [
-    "Tamil Only",
-    "Tamil + English Transliteration",
-    "Tamil + Sinhala Transliteration",
-    "All Three Formats",
-    "English Transliteration Only",
-    "Sinhala Transliteration Only",
-  ];
+                                        if (isSelected)
+                                          const Icon(
+                                            Icons.check_circle,
+                                            color: Colors.green,
+                                            size: 20,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: MainBAckgound(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Back button
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.arrow_back,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                  padding: EdgeInsets.zero,
-                  alignment: Alignment.centerLeft,
-                ),
-
-                const SizedBox(height: 30),
-
-                // Title with dotted border
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.6),
-                        width: 1,
-                        style: BorderStyle.solid,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'How to Read Lyrics',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 40),
-
-                // Options list
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: lyricsFormats.length,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
-                        child: GestureDetector(
-                          onTap: () {
-                            // Handle option selection
-                            _handleFormatSelection(
-                              context,
-                              lyricsFormats[index],
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 18,
-                            ),
+                        // Current selection info
+                        if (selectedFormat != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.2),
+                                color: Colors.blue.withOpacity(0.3),
                                 width: 1,
                               ),
                             ),
-                            child: Text(
-                              lyricsFormats[index],
-                              style: const TextStyle(
-                                color: Colors.white,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline,
+                                      color: Colors.lightBlue,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Current Selection:',
+                                      style: TextStyle(
+                                        color: Colors.lightBlue,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  HowToReadLyricsService.getFormatTitle(
+                                    selectedFormat!,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _getFormatDescription(selectedFormat!),
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 13,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // Save button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed:
+                                selectedFormat != null
+                                    ? _saveSelectedFormat
+                                    : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white.withOpacity(0.2),
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.withOpacity(
+                                0.1,
+                              ),
+                              disabledForegroundColor: Colors.grey.withOpacity(
+                                0.5,
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color:
+                                      selectedFormat != null
+                                          ? Colors.white.withOpacity(0.3)
+                                          : Colors.grey.withOpacity(0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: const Text(
+                              'Save Preference',
+                              style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w400,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );
   }
 
-  void _handleFormatSelection(BuildContext context, String format) {
-    // Handle the selected format
-    print('Selected: $format');
+  void _selectFormat(String formatValue) {
+    setState(() {
+      selectedFormat = formatValue;
+    });
+  }
 
-    // Show confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Selected: $format'),
-        backgroundColor: Colors.green.withOpacity(0.8),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  bool _isMultiLanguageFormat(String format) {
+    return HowToReadLyricsService.isMultiLanguageFormat(format);
+  }
 
-    // Navigate back with selected value
-    Navigator.of(context).pop(format);
+  String _getLanguageCount(String format) {
+    final languages = HowToReadLyricsService.getRequiredLanguages(format);
+    return '${languages.length} Lang';
+  }
+
+  String _getFormatDescription(String format) {
+    switch (format) {
+      case 'tamil_only':
+        return 'You will see lyrics only in Tamil script.';
+      case 'tamil_english':
+        return 'You will see Tamil lyrics first, followed by English transliteration.';
+      case 'tamil_sinhala':
+        return 'You will see Tamil lyrics first, followed by Sinhala transliteration.';
+      case 'all_three':
+        return 'You will see lyrics in Tamil, then Sinhala, then English transliteration.';
+      case 'english_only':
+        return 'You will see lyrics only in English transliteration.';
+      case 'sinhala_only':
+        return 'You will see lyrics only in Sinhala transliteration.';
+      default:
+        return '';
+    }
+  }
+
+  Future<void> _saveSelectedFormat() async {
+    if (selectedFormat == null) return;
+
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+      );
+
+      // Save the preference
+      await HowToReadLyricsService.saveLyricsFormat(selectedFormat!);
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Preference saved: ${HowToReadLyricsService.getFormatTitle(selectedFormat!)}',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+
+      // Navigate back after a delay
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          Navigator.of(context).pop(selectedFormat);
+        }
+      });
+    } catch (e) {
+      // Close loading dialog if open
+      Navigator.of(context).pop();
+
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Failed to save preference. Please try again.',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red.withOpacity(0.9),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
   }
 }

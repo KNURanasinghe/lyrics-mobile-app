@@ -266,6 +266,7 @@ class SongCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 80,
+
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           color: const Color(0xFF666666).withOpacity(0.5),
@@ -323,22 +324,22 @@ class SongCard extends StatelessWidget {
             ),
 
             // Play Button
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.2),
-                ),
-                child: const Icon(
-                  Icons.play_arrow,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-            ),
+            // Padding(
+            //   padding: const EdgeInsets.only(right: 16),
+            //   child: Container(
+            //     width: 40,
+            //     height: 40,
+            //     decoration: BoxDecoration(
+            //       shape: BoxShape.circle,
+            //       color: Colors.white.withOpacity(0.2),
+            //     ),
+            //     child: const Icon(
+            //       Icons.play_arrow,
+            //       color: Colors.white,
+            //       size: 20,
+            //     ),
+            //   ),
+            // ),
           ],
         ),
       ),

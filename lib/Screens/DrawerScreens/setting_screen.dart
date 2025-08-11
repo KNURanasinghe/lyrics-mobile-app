@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/Service/setting_service.dart' show FontSettingsService;
+// Import your font settings service
+// import 'package:lyrics/Service/font_settings_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,6 +16,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool isBoldText = false;
   double brightness = 0.6; // 0.0 to 1.0
   bool notificationsEnabled = true;
+  double lyricsFontSize = 18.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      // Load font settings
+      final fontSize = await FontSettingsService.getFontSize();
+      final boldText = await FontSettingsService.getBoldText();
+
+      setState(() {
+        lyricsFontSize = fontSize;
+        isBoldText = boldText;
+      });
+    } catch (e) {
+      print('Error loading settings: $e');
+    }
+  }
+
+  Future<void> _saveFontSize(double fontSize) async {
+    await FontSettingsService.saveFontSize(fontSize);
+    setState(() {
+      lyricsFontSize = fontSize;
+    });
+  }
+
+  Future<void> _saveBoldText(bool isBold) async {
+    await FontSettingsService.saveBoldText(isBold);
+    setState(() {
+      isBoldText = isBold;
+    });
+  }
+
+  void _showFontSizeDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Color(0xFF2A2A2A),
+          title: Text(
+            'Select Font Size',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children:
+                FontSettingsService.fontSizeOptions.entries.map((entry) {
+                  return ListTile(
+                    title: Text(
+                      entry.key,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: entry.value,
+                        fontWeight:
+                            isBoldText ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    leading: Radio<double>(
+                      value: entry.value,
+                      groupValue: lyricsFontSize,
+                      onChanged: (value) {
+                        Navigator.pop(context);
+                        if (value != null) {
+                          _saveFontSize(value);
+                        }
+                      },
+                      activeColor: Colors.blue,
+                    ),
+                  );
+                }).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +266,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
 
-            // Text Size Card
+            // Font Size Card
             Container(
               padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               margin: EdgeInsets.only(bottom: 12),
@@ -188,29 +276,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Text Size',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
+                  // Font Size Selection
+                  InkWell(
+                    onTap: _showFontSizeDialog,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Font Size',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              FontSettingsService.getFontSizeLabel(
+                                lyricsFontSize,
+                              ),
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.grey.shade600,
-                        size: 18,
-                      ),
-                    ],
+                        Row(
+                          children: [
+                            // Preview text
+                            Text(
+                              'Aa',
+                              style: TextStyle(
+                                color: Colors.black54,
+                                fontSize: lyricsFontSize,
+                                fontWeight:
+                                    isBoldText
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              color: Colors.grey.shade600,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                   Divider(
                     color: Colors.grey.shade400,
                     thickness: 1,
                     height: 24,
                   ),
+                  // Bold Text Toggle
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -225,9 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Switch(
                         value: isBoldText,
                         onChanged: (value) {
-                          setState(() {
-                            isBoldText = value;
-                          });
+                          _saveBoldText(value);
                         },
                         activeColor: Colors.white,
                         activeTrackColor: Colors.blue,

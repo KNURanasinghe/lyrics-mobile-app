@@ -179,6 +179,69 @@ class SongService {
     }
   }
 
+  // Updated SongService method to handle the new response format
+  Future<Map<String, dynamic>> getSongLyricsByFormat(
+    String songTitle,
+    String format,
+  ) async {
+    try {
+      final result = await _apiService.get(
+        '/songs/lyrics/format?title=${Uri.encodeComponent(songTitle)}&format=$format',
+      );
+
+      print('Lyrics by format result: $result');
+
+      if (result['success'] == true) {
+        final data = result['data']['data'];
+
+        if (data == null) {
+          return {'success': false, 'message': 'No data received from server'};
+        }
+
+        // Safely extract the lyrics map and display order
+        final lyricsMap =
+            data['lyrics'] != null
+                ? Map<String, dynamic>.from(data['lyrics'])
+                : <String, dynamic>{};
+
+        final displayOrder =
+            data['displayOrder'] != null
+                ? List<String>.from(data['displayOrder'])
+                : <String>[];
+
+        final availableLanguages =
+            data['availableLanguages'] != null
+                ? List<String>.from(data['availableLanguages'])
+                : <String>[];
+
+        return {
+          'success': true,
+          'song': data['song'] ?? 'Unknown Song',
+          'artist': data['artist'] ?? 'Unknown Artist',
+          'format': data['format'] ?? format,
+          'formatDisplayName': data['formatDisplayName'] ?? format,
+          'lyrics': lyricsMap,
+          'displayOrder': displayOrder,
+          'availableLanguages': availableLanguages,
+          'totalLanguages': data['totalLanguages'] ?? 0,
+          'message': 'Lyrics fetched successfully',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': result['message'] ?? 'Failed to fetch lyrics',
+        };
+      }
+    } catch (e) {
+      print('Error in getSongLyricsByFormat: $e');
+      print('Stack trace: ${StackTrace.current}');
+      return {
+        'success': false,
+        'message': 'An error occurred: ${e.toString()}',
+      };
+    }
+  }
+
   // Get song lyrics by language
   Future<Map<String, dynamic>> getSongLyrics(
     String songTitle,
