@@ -23,18 +23,18 @@ class _LoginPageState extends State<LoginPage> {
   String? errorMessage;
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  Future<void> signInWithEmailAndPassword() async {
-    try {
-      await FireBaseAuthServices().signInWithEmailAndPassword(
-        _emailController.text,
-        _passwordController.text,
-      );
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        errorMessage = e.message;
-      });
-    }
-  }
+  // Future<void> signInWithEmailAndPassword() async {
+  //   try {
+  //     await FireBaseAuthServices().signInWithEmailAndPassword(
+  //       _emailController.text,
+  //       _passwordController.text,
+  //     );
+  //   } on FirebaseAuthException catch (e) {
+  //     setState(() {
+  //       errorMessage = e.message;
+  //     });
+  //   }
+  // }
 
   Future<void> signIn() async {
     // Validate all fields are filled
@@ -71,7 +71,7 @@ class _LoginPageState extends State<LoginPage> {
         emailOrPhone: _emailController.text,
         password: _passwordController.text,
       );
-      print('Login result: ${result['user']}');
+      print('Login result: ${result['success']}');
       if (result['success'] == true) {
         Navigator.pushReplacement(
           context,
@@ -113,7 +113,9 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(height: MediaQuery.of(context).size.height * 0.13),
                   // Add your login form widgets here
                   Text(
-                    'Hello,\nWelcome Back!',
+                    'Welcome! \nLet’s continue praising together.',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 36,

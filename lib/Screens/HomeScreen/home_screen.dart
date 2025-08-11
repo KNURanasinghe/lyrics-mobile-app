@@ -4,10 +4,6 @@ import 'package:lyrics/Const/const.dart';
 import 'package:lyrics/Models/artist_model.dart';
 import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Models/user_model.dart';
-// Add these imports for your API services
-// You'll need to import the correct path based on your file structure
-// import 'package:lyrics/Services/artist_service.dart';
-// import 'package:lyrics/Services/album_service.dart';
 import 'package:lyrics/Screens/DrawerScreens/how_ro_read_lyrics.dart';
 import 'package:lyrics/Screens/DrawerScreens/privacy_policy.dart';
 import 'package:lyrics/Screens/DrawerScreens/setting_screen.dart';
@@ -41,6 +37,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   List<dynamic> _searchResults = [];
+
   // API Services
   final ArtistService _artistService = ArtistService();
   final AlbumService _albumService = AlbumService();
@@ -63,7 +60,7 @@ class _HomePageState extends State<HomePage> {
   final CarouselSliderController _carouselController =
       CarouselSliderController();
 
-  String profile_image_url = 'assets/profile_image.png';
+  String? profileImageUrl;
 
   @override
   void initState() {
@@ -93,7 +90,7 @@ class _HomePageState extends State<HomePage> {
         throw Exception(userResult['message'] ?? 'Failed to load user profile');
       }
 
-      _currentUser = userResult['user'] as UserModel;
+      _currentUser = userResult['user'] as UserModel?;
 
       // Load extended profile details if user exists
       if (_currentUser != null) {
@@ -101,12 +98,13 @@ class _HomePageState extends State<HomePage> {
           _currentUser!.id.toString(),
         );
         if (profileResult['success']) {
-          _profileDetails = profileResult['profile'];
+          _profileDetails = profileResult['profile'] as Map<String, dynamic>?;
         }
       }
 
       setState(() {
-        profile_image_url = _profileDetails?['profile']['profile_image'];
+        profileImageUrl =
+            _profileDetails?['profile']?['profile_image'] as String?;
         _isLoading = false;
       });
     } catch (e) {
@@ -121,8 +119,9 @@ class _HomePageState extends State<HomePage> {
     try {
       final result = await _albumService.getLatestAlbums();
       if (result['success']) {
+        final albumsList = result['albums'] as List<dynamic>?;
         setState(() {
-          latestAlbums = result['albums'] ?? [];
+          latestAlbums = albumsList?.cast<AlbumModel>() ?? [];
         });
       }
     } catch (e) {
@@ -139,8 +138,9 @@ class _HomePageState extends State<HomePage> {
       final result = await _artistService.getAllArtists();
       print('art ${result['artists']}');
       if (result['success']) {
+        final artistsList = result['artists'] as List<dynamic>?;
         setState(() {
-          artists = result['artists'] ?? [];
+          artists = artistsList?.cast<ArtistModel>() ?? [];
           isLoadingArtists = false;
         });
       } else {
@@ -171,10 +171,11 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadAlbums() async {
     try {
       final result = await _albumService.getAllAlbums();
-      print('art ${result['albums']}');
+      print('albums ${result['albums']}');
       if (result['success']) {
+        final albumsList = result['albums'] as List<dynamic>?;
         setState(() {
-          albums = result['albums'] ?? [];
+          albums = albumsList?.cast<AlbumModel>() ?? [];
           isLoadingAlbums = false;
         });
       } else {
@@ -204,6 +205,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _artistService.dispose();
     _albumService.dispose();
     super.dispose();
@@ -222,34 +224,45 @@ class _HomePageState extends State<HomePage> {
       _isSearching = true;
     });
 
-    final result = await _searchService.search(query);
+    try {
+      final result = await _searchService.search(query);
 
-    if (mounted) {
-      setState(() {
-        _isSearching = false;
-        if (result['success']) {
-          _searchResults = [
-            ...result['artists'],
-            ...result['albums'],
-            ...result['songs'],
-          ];
-        } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(result['message'])));
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+          if (result['success']) {
+            _searchResults = [
+              ...(result['artists'] as List<dynamic>? ?? []),
+              ...(result['albums'] as List<dynamic>? ?? []),
+              ...(result['songs'] as List<dynamic>? ?? []),
+            ];
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result['message'] ?? 'Search failed')),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Search error: $e')));
+      }
     }
   }
 
   // Add this method to build search results
   Widget _buildSearchResults() {
-    if (!_isSearching && _searchResults.isEmpty) return SizedBox();
+    if (!_isSearching && _searchResults.isEmpty) return const SizedBox();
 
     if (_isSearching) {
-      return Center(
+      return const Center(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: EdgeInsets.all(20.0),
           child: CircularProgressIndicator(),
         ),
       );
@@ -258,8 +271,8 @@ class _HomePageState extends State<HomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
           child: Text(
             'Search Results',
             style: TextStyle(
@@ -271,7 +284,7 @@ class _HomePageState extends State<HomePage> {
         ),
         ListView.builder(
           shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
+          physics: const NeverScrollableScrollPhysics(),
           itemCount: _searchResults.length,
           itemBuilder: (context, index) {
             final item = _searchResults[index];
@@ -283,7 +296,7 @@ class _HomePageState extends State<HomePage> {
             } else if (item is SongModel) {
               return _buildSongSearchItem(item);
             } else {
-              return SizedBox();
+              return const SizedBox();
             }
           },
         ),
@@ -297,10 +310,10 @@ class _HomePageState extends State<HomePage> {
         backgroundImage:
             artist.image != null
                 ? NetworkImage(artist.image!)
-                : AssetImage('assets/Rectangle 32.png') as ImageProvider,
+                : const AssetImage('assets/Rectangle 32.png') as ImageProvider,
       ),
-      title: Text(artist.name, style: TextStyle(color: Colors.white)),
-      subtitle: Text('Artist', style: TextStyle(color: Colors.white70)),
+      title: Text(artist.name, style: const TextStyle(color: Colors.white)),
+      subtitle: const Text('Artist', style: TextStyle(color: Colors.white70)),
       onTap: () => _navigateToArtistAlbums(artist),
     );
   }
@@ -314,12 +327,20 @@ class _HomePageState extends State<HomePage> {
           width: 50,
           height: 50,
           fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Image.asset(
+              'assets/Rectangle 32.png',
+              width: 50,
+              height: 50,
+              fit: BoxFit.cover,
+            );
+          },
         ),
       ),
-      title: Text(album.name, style: TextStyle(color: Colors.white)),
+      title: Text(album.name, style: const TextStyle(color: Colors.white)),
       subtitle: Text(
         'Album • ${album.artistName ?? 'Unknown Artist'}',
-        style: TextStyle(color: Colors.white70),
+        style: const TextStyle(color: Colors.white70),
       ),
       onTap: () => _navigateToAlbumSongs(album),
     );
@@ -334,12 +355,20 @@ class _HomePageState extends State<HomePage> {
           width: 50,
           height: 50,
           fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Image.asset(
+              'assets/Rectangle 32.png',
+              width: 50,
+              height: 50,
+              fit: BoxFit.cover,
+            );
+          },
         ),
       ),
-      title: Text(song.songname, style: TextStyle(color: Colors.white)),
+      title: Text(song.songname, style: const TextStyle(color: Colors.white)),
       subtitle: Text(
         'Song • ${song.artistName ?? 'Unknown Artist'}',
-        style: TextStyle(color: Colors.white70),
+        style: const TextStyle(color: Colors.white70),
       ),
       onTap: () {
         Navigator.push(
@@ -361,6 +390,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildFeaturedAlbumsCarousel() {
+    if (latestAlbums.isEmpty) {
+      return const SizedBox(height: 140);
+    }
+
     return Column(
       children: [
         CarouselSlider.builder(
@@ -371,7 +404,7 @@ class _HomePageState extends State<HomePage> {
             viewportFraction: 0.9,
             enlargeCenterPage: true,
             autoPlay: true,
-            autoPlayInterval: Duration(seconds: 5),
+            autoPlayInterval: const Duration(seconds: 5),
             onPageChanged: (index, reason) {
               setState(() {
                 _currentCarouselIndex = index;
@@ -404,7 +437,7 @@ class _HomePageState extends State<HomePage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
+                            const Text(
                               'New Album Released',
                               style: TextStyle(
                                 color: Colors.white70,
@@ -412,12 +445,12 @@ class _HomePageState extends State<HomePage> {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                            SizedBox(height: 8),
+                            const SizedBox(height: 8),
                             SizedBox(
                               width: MediaQuery.of(context).size.width * 0.5,
                               child: Text(
                                 album.name,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
@@ -426,10 +459,10 @@ class _HomePageState extends State<HomePage> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            SizedBox(height: 4),
+                            const SizedBox(height: 4),
                             Text(
                               album.artistName ?? 'Unknown Artist',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 14,
                               ),
@@ -443,7 +476,7 @@ class _HomePageState extends State<HomePage> {
                         top: -20,
                         bottom: 0,
                         child: ClipRRect(
-                          borderRadius: BorderRadius.only(
+                          borderRadius: const BorderRadius.only(
                             topRight: Radius.circular(16),
                             bottomRight: Radius.circular(16),
                           ),
@@ -480,7 +513,7 @@ class _HomePageState extends State<HomePage> {
             );
           },
         ),
-        SizedBox(height: 10),
+        const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children:
@@ -490,7 +523,7 @@ class _HomePageState extends State<HomePage> {
                   child: Container(
                     width: 8.0,
                     height: 8.0,
-                    margin: EdgeInsets.symmetric(
+                    margin: const EdgeInsets.symmetric(
                       vertical: 8.0,
                       horizontal: 4.0,
                     ),
@@ -531,10 +564,14 @@ class _HomePageState extends State<HomePage> {
                         onTap: () {
                           _scaffoldKey.currentState?.openDrawer();
                         },
-                        child: Icon(Icons.menu, color: Colors.white, size: 24),
+                        child: const Icon(
+                          Icons.menu,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
-                      SizedBox(width: 12),
-                      Text(
+                      const SizedBox(width: 12),
+                      const Text(
                         'Home',
                         style: TextStyle(
                           color: Colors.white,
@@ -545,117 +582,24 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
+
+                // Featured Albums Carousel
                 _buildFeaturedAlbumsCarousel(),
-                // Featured Album Card
-                // Padding(
-                //   padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                //   child: Container(
-                //     width: double.infinity,
-                //     height: 140,
-                //     decoration: BoxDecoration(
-                //       gradient: Const.heroBackgrounf,
-                //       borderRadius: BorderRadius.circular(16),
-                //     ),
-                //     child: Stack(
-                //       clipBehavior: Clip.none,
-                //       children: [
-                //         // Text Content
-                //         Positioned(
-                //           left: 20,
-                //           top: 20,
-                //           bottom: 20,
-                //           child: Column(
-                //             crossAxisAlignment: CrossAxisAlignment.start,
-                //             mainAxisAlignment: MainAxisAlignment.center,
-                //             children: [
-                //               Text(
-                //                 'New Album Released',
-                //                 style: TextStyle(
-                //                   color: Colors.white70,
-                //                   fontSize: 12,
-                //                   fontWeight: FontWeight.w500,
-                //                 ),
-                //               ),
-                //               SizedBox(height: 8),
-                //               Text(
-                //                 albums.isNotEmpty
-                //                     ? albums.first.name
-                //                     : 'Featured Album',
-                //                 style: TextStyle(
-                //                   color: Colors.white,
-                //                   fontSize: 20,
-                //                   fontWeight: FontWeight.bold,
-                //                 ),
-                //               ),
-                //               SizedBox(height: 4),
-                //               Text(
-                //                 albums.isNotEmpty
-                //                     ? (albums.first.artistName ??
-                //                         'Unknown Artist')
-                //                     : 'Artist Name',
-                //                 style: TextStyle(
-                //                   color: Colors.white70,
-                //                   fontSize: 14,
-                //                 ),
-                //               ),
-                //             ],
-                //           ),
-                //         ),
-                //         // Hero Image - Positioned to extend beyond container
-                //         Positioned(
-                //           right: -5,
-                //           top: -20,
-                //           bottom: 0,
-                //           child: ClipRRect(
-                //             borderRadius: BorderRadius.only(
-                //               topRight: Radius.circular(16),
-                //               bottomRight: Radius.circular(16),
-                //             ),
-                //             child: SizedBox(
-                //               width: 180,
-                //               height: 160,
-                //               child:
-                //                   albums.isNotEmpty &&
-                //                           albums.first.image != null
-                //                       ? Image.network(
-                //                         albums.first.image!,
-                //                         fit: BoxFit.cover,
-                //                         errorBuilder: (
-                //                           context,
-                //                           error,
-                //                           stackTrace,
-                //                         ) {
-                //                           return Image.asset(
-                //                             'assets/hero.png',
-                //                             fit: BoxFit.cover,
-                //                           );
-                //                         },
-                //                       )
-                //                       : Image.asset(
-                //                         'assets/hero.png',
-                //                         fit: BoxFit.cover,
-                //                       ),
-                //             ),
-                //           ),
-                //         ),
-                //       ],
-                //     ),
-                //   ),
-                // ),
-                SizedBox(height: 20),
+
+                const SizedBox(height: 20),
 
                 // Search Bar
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Color(0xFF363636),
+                      color: const Color(0xFF363636),
                       borderRadius: BorderRadius.circular(25),
                     ),
                     child: TextField(
                       controller: _searchController,
-                      style: TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
                         hintText: 'Search songs, albums, artists...',
                         hintStyle: TextStyle(
                           color: Colors.white70,
@@ -682,15 +626,16 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                SizedBox(height: 30),
+                const SizedBox(height: 30),
                 _buildSearchResults(),
+
                 // Artists Section
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
+                      const Text(
                         'Artists',
                         style: TextStyle(
                           color: Colors.white,
@@ -699,7 +644,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       if (isLoadingArtists)
-                        SizedBox(
+                        const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
@@ -713,14 +658,14 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                SizedBox(height: 15),
+                const SizedBox(height: 15),
 
                 // Artists Grid
                 SizedBox(
                   height: 160,
                   child:
                       isLoadingArtists
-                          ? Center(
+                          ? const Center(
                             child: CircularProgressIndicator(
                               valueColor: AlwaysStoppedAnimation<Color>(
                                 Colors.white,
@@ -728,7 +673,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           )
                           : artists.isEmpty
-                          ? Center(
+                          ? const Center(
                             child: Text(
                               'No artists found',
                               style: TextStyle(color: Colors.white70),
@@ -736,7 +681,7 @@ class _HomePageState extends State<HomePage> {
                           )
                           : ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            padding: EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             itemCount: artists.length,
                             itemBuilder: (context, index) {
                               return Padding(
@@ -754,7 +699,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                 ),
 
-                SizedBox(height: 30),
+                const SizedBox(height: 30),
 
                 // Albums Section
                 Padding(
@@ -762,7 +707,7 @@ class _HomePageState extends State<HomePage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
+                      const Text(
                         'Albums',
                         style: TextStyle(
                           color: Colors.white,
@@ -771,7 +716,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       if (isLoadingAlbums)
-                        SizedBox(
+                        const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
@@ -785,14 +730,14 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                SizedBox(height: 15),
+                const SizedBox(height: 15),
 
                 // Albums Grid
                 SizedBox(
                   height: 160,
                   child:
                       isLoadingAlbums
-                          ? Center(
+                          ? const Center(
                             child: CircularProgressIndicator(
                               valueColor: AlwaysStoppedAnimation<Color>(
                                 Colors.white,
@@ -800,7 +745,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           )
                           : albums.isEmpty
-                          ? Center(
+                          ? const Center(
                             child: Text(
                               'No albums found',
                               style: TextStyle(color: Colors.white70),
@@ -808,7 +753,7 @@ class _HomePageState extends State<HomePage> {
                           )
                           : ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            padding: EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             itemCount: albums.length,
                             itemBuilder: (context, index) {
                               return Padding(
@@ -826,7 +771,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                 ),
 
-                SizedBox(height: 30),
+                const SizedBox(height: 30),
               ],
             ),
           ),
@@ -834,31 +779,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-  // void _searchArtists(String query) async {
-  //   if (query.trim().isEmpty) return;
-
-  //   // You can implement artist search here
-  //   // For now, filter existing artists
-  //   setState(() {
-  //     isLoadingArtists = true;
-  //   });
-
-  //   // Simulate search delay
-  //   await Future.delayed(Duration(milliseconds: 500));
-
-  //   setState(() {
-  //     // Filter artists by name
-  //     artists =
-  //         artists
-  //             .where(
-  //               (artist) =>
-  //                   artist.name.toLowerCase().contains(query.toLowerCase()),
-  //             )
-  //             .toList();
-  //     isLoadingArtists = false;
-  //   });
-  // }
 
   void _navigateToArtistAlbums(ArtistModel artist) async {
     // Navigate to artist's albums/songs
@@ -877,10 +797,9 @@ class _HomePageState extends State<HomePage> {
       context,
       MaterialPageRoute(
         builder:
-            (context) => MusicPlayer(
-              backgroundImage: album.image ?? 'assets/Rectangle 32.png',
-              song: album.name,
-              artist: album.artistName ?? 'Unknown Artist',
+            (context) => AllSongs(
+              artistId: album.artistId,
+              artistName: album.artistName,
             ),
       ),
     );
@@ -908,10 +827,14 @@ class _HomePageState extends State<HomePage> {
                       CircleAvatar(
                         radius: 30,
                         backgroundColor: Colors.grey[600],
-                        backgroundImage: NetworkImage(profile_image_url),
+                        backgroundImage:
+                            profileImageUrl != null &&
+                                    profileImageUrl!.isNotEmpty
+                                ? NetworkImage(profileImageUrl!)
+                                : null,
                         child:
-                            profile_image_url == null
-                                ? Icon(
+                            profileImageUrl == null || profileImageUrl!.isEmpty
+                                ? const Icon(
                                   Icons.person,
                                   color: Colors.white,
                                   size: 35,
@@ -1097,7 +1020,7 @@ class _HomePageState extends State<HomePage> {
       leading: Icon(icon, color: Colors.white, size: 24),
       title: Text(
         title,
-        style: TextStyle(
+        style: const TextStyle(
           color: Colors.white,
           fontSize: 22,
           fontWeight: FontWeight.w500,
@@ -1110,7 +1033,7 @@ class _HomePageState extends State<HomePage> {
           Navigator.pop(context);
         }
       },
-      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
     );
   }
 
@@ -1124,34 +1047,24 @@ class _HomePageState extends State<HomePage> {
             height: 110,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              image: DecorationImage(
-                image:
-                    artist.image != null
-                        ? NetworkImage(artist.image!)
-                        : AssetImage('assets/Rectangle 32.png')
-                            as ImageProvider,
-                fit: BoxFit.cover,
-              ),
+              image:
+                  artist.image != null
+                      ? DecorationImage(
+                        image: NetworkImage(artist.image!),
+                        fit: BoxFit.cover,
+                      )
+                      : null,
+              color: artist.image == null ? Colors.grey[800] : null,
             ),
             child:
                 artist.image == null
-                    ? Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.grey[800],
-                      ),
-                      child: Icon(
-                        Icons.person,
-                        color: Colors.white54,
-                        size: 40,
-                      ),
-                    )
+                    ? const Icon(Icons.person, color: Colors.white54, size: 40)
                     : null,
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             artist.name,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -1160,7 +1073,7 @@ class _HomePageState extends State<HomePage> {
           ),
           Text(
             '${artist.albumCount ?? 0} Albums',
-            style: TextStyle(color: Colors.white70, fontSize: 12),
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
             overflow: TextOverflow.ellipsis,
           ),
         ],
@@ -1178,30 +1091,24 @@ class _HomePageState extends State<HomePage> {
             height: 110,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              image: DecorationImage(
-                image:
-                    album.image != null
-                        ? NetworkImage(album.image!)
-                        : AssetImage('assets/Rectangle 32.png')
-                            as ImageProvider,
-                fit: BoxFit.cover,
-              ),
+              image:
+                  album.image != null
+                      ? DecorationImage(
+                        image: NetworkImage(album.image!),
+                        fit: BoxFit.cover,
+                      )
+                      : null,
+              color: album.image == null ? Colors.grey[800] : null,
             ),
             child:
                 album.image == null
-                    ? Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.grey[800],
-                      ),
-                      child: Icon(Icons.album, color: Colors.white54, size: 40),
-                    )
+                    ? const Icon(Icons.album, color: Colors.white54, size: 40)
                     : null,
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             album.name,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -1210,7 +1117,7 @@ class _HomePageState extends State<HomePage> {
           ),
           Text(
             album.artistName ?? 'Unknown Artist',
-            style: TextStyle(color: Colors.white70, fontSize: 12),
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
             overflow: TextOverflow.ellipsis,
           ),
         ],

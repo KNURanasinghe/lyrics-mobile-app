@@ -80,6 +80,35 @@ class _ProfileState extends State<Profile> {
     await _loadPreferredLanguage();
   }
 
+  // Helper method to safely get profile data
+  String _getProfileValue(String key, String defaultValue) {
+    if (_profileDetails == null) return defaultValue;
+
+    // Handle nested profile structure
+    if (_profileDetails!['profile'] != null &&
+        _profileDetails!['profile'][key] != null) {
+      return _profileDetails!['profile'][key].toString();
+    }
+
+    // Handle direct key access
+    if (_profileDetails![key] != null) {
+      return _profileDetails![key].toString();
+    }
+
+    return defaultValue;
+  }
+
+  // Helper method to safely get profile image
+  ImageProvider _getProfileImage() {
+    final profileImageUrl = _getProfileValue('profile_image', '');
+
+    if (profileImageUrl.isNotEmpty && profileImageUrl != 'null') {
+      return NetworkImage(profileImageUrl);
+    }
+
+    return AssetImage('assets/profile_image.png') as ImageProvider;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -143,14 +172,7 @@ class _ProfileState extends State<Profile> {
                             // Profile Image
                             CircleAvatar(
                               radius: 45,
-                              backgroundImage:
-                                  _profileDetails?['profile']['profile_image'] !=
-                                          null
-                                      ? NetworkImage(
-                                        _profileDetails!['profile']['profile_image'],
-                                      )
-                                      : AssetImage('assets/profile_image.png')
-                                          as ImageProvider,
+                              backgroundImage: _getProfileImage(),
                               backgroundColor: Colors.grey[300],
                             ),
                             SizedBox(height: 16),
@@ -234,51 +256,39 @@ class _ProfileState extends State<Profile> {
                             ),
                             _buildDivider(),
 
-                            // Account created date
-                            // if (_currentUser?.createdAt != null)
-                            //   _buildProfileRow(
-                            //     'Member Since',
-                            //     _formatDate(_currentUser!.createdAt!),
-                            //   ),
-                            // if (_currentUser?.createdAt != null) _buildDivider(),
-
                             // Dynamic fields from profile details
                             _buildProfileRow(
                               'Country',
-                              _profileDetails?['profile']['country'] ??
-                                  'Sri Lanka',
+                              _getProfileValue('country', 'Sri Lanka'),
                             ),
                             _buildDivider(),
 
                             _buildProfileRow(
                               'Date of Birth',
-                              _profileDetails?['profile']['date_of_birth'] !=
-                                      null
-                                  ? _formatProfileDate(
-                                    _profileDetails!['profile']['date_of_birth'],
-                                  )
-                                  : 'Not provided',
+                              _formatProfileDate(
+                                _getProfileValue('date_of_birth', ''),
+                              ),
                             ),
                             _buildDivider(),
 
                             _buildProfileRow(
                               'Gender',
-                              _profileDetails?['profile']['gender'] ??
-                                  'Not specified',
+                              _getProfileValue('gender', 'Not specified'),
                             ),
                             _buildDivider(),
 
                             _buildProfileRow(
                               'Preferred Language',
-                              _profileDetails?['profile']['preferred_language'] ??
-                                  _preferredLanguage,
+                              _getProfileValue(
+                                'preferred_language',
+                                _preferredLanguage,
+                              ),
                             ),
                             _buildDivider(),
 
                             _buildProfileRow(
                               'Account Type',
-                              _profileDetails?['profile']['account_type'] ??
-                                  'Pro',
+                              _getProfileValue('account_type', 'Free'),
                             ),
                             _buildDivider(),
 
@@ -299,6 +309,10 @@ class _ProfileState extends State<Profile> {
   }
 
   String _formatProfileDate(String dateString) {
+    if (dateString.isEmpty || dateString == 'null') {
+      return 'Not provided';
+    }
+
     try {
       // Parse the ISO date string (e.g., "2025-08-04T00:00:00.000Z")
       DateTime dob = DateTime.parse(dateString);
@@ -317,7 +331,7 @@ class _ProfileState extends State<Profile> {
         }
         return dateString;
       } catch (e) {
-        return dateString;
+        return 'Not provided';
       }
     }
   }
@@ -349,10 +363,12 @@ class _ProfileState extends State<Profile> {
   }
 
   Widget _buildInterestsRow() {
-    final interests =
-        _profileDetails?['interests'] is List
-            ? List<String>.from(_profileDetails!['interests'])
-            : <String>[];
+    final interests = _profileDetails?['interests'];
+    List<String> interestsList = [];
+
+    if (interests is List) {
+      interestsList = List<String>.from(interests);
+    }
 
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 12),
@@ -368,14 +384,14 @@ class _ProfileState extends State<Profile> {
               fontWeight: FontWeight.w500,
             ),
           ),
-          if (interests.isNotEmpty)
+          if (interestsList.isNotEmpty)
             Flexible(
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children:
-                    interests
-                        .take(interests.length) // Show max 3 interests
+                    interestsList
+                        .take(interestsList.length) // Show all interests
                         .map((interest) => _buildInterestChip(interest))
                         .toList(),
               ),

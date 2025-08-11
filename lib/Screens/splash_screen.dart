@@ -26,7 +26,26 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SingleChildScrollView(
-        child: Column(children: [Image.asset('assets/splash.png')]),
+        child: Column(
+          children: [
+            Image.asset(
+              'assets/splash.png',
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: MediaQuery.of(context).size.height,
+            ),
+            // const SizedBox(height: 20),
+            // const Text(
+            //   'Welcome to Lyrics App',
+            //   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            // ),
+            // const SizedBox(height: 10),
+            // const Text(
+            //   'Your favorite lyrics at your fingertips',
+            //   style: TextStyle(fontSize: 16, color: Colors.grey),
+            // ),
+          ],
+        ),
       ),
     );
   }
