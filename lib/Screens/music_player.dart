@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/Service/color_service.dart';
+import 'package:lyrics/Service/favorites_service.dart';
 import 'package:lyrics/Service/language_service.dart';
+
 import 'package:lyrics/Service/lyrics_service.dart';
 import 'package:lyrics/Service/setting_service.dart';
 import 'package:lyrics/Service/song_service.dart';
+import 'package:lyrics/Service/user_service.dart';
+
+import 'package:lyrics/Service/setlist_service.dart';
+import 'package:lyrics/Service/user_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MusicPlayer extends StatefulWidget {
   final String backgroundImage;
+  final int id;
   final String song;
   final String artist;
   final String? lyrics;
@@ -15,6 +24,7 @@ class MusicPlayer extends StatefulWidget {
     super.key,
     required this.backgroundImage,
     required this.song,
+    required this.id,
     required this.artist,
     this.lyrics,
     this.language,
@@ -35,15 +45,254 @@ class _MusicPlayerState extends State<MusicPlayer> {
 
   List<String> _currentDisplayOrder = [];
 
+  int? currentSongId;
+  String? currentUserId;
+  bool isCheckingFavorite = false;
+
   // Font settings
   double baseFontSize = 18.0;
   bool isBoldText = false;
+  Color selectedLyricsColor = Colors.white;
+
+  bool isPremium = false;
 
   @override
   void initState() {
     super.initState();
     _initializePlayer();
+    loadPremiumStatus();
     _reloadFontSettings();
+    _reloadColorSettings();
+    initializeFavoriteStatus();
+  }
+
+  Future<void> _reloadColorSettings() async {
+    final color = await ColorService.getColor();
+    setState(() {
+      selectedLyricsColor = color;
+    });
+  }
+
+  @override
+  void onColorChanged(Color newColor) {
+    setState(() {
+      selectedLyricsColor = newColor;
+    });
+  }
+
+  Future<void> initializeFavoriteStatus() async {
+    try {
+      currentUserId = await UserService.getUserID();
+      // You need to get the song ID. For now, using a placeholder
+      setState(() {
+        currentSongId = widget.id;
+      }); // Implement this method
+
+      if (currentUserId != null && currentSongId != null) {
+        await _checkFavoriteStatus();
+      }
+    } catch (e) {
+      print('Error initializing favorite status: $e');
+    }
+  }
+
+  Future<void> _checkFavoriteStatus() async {
+    if (currentUserId == null || currentSongId == null) return;
+
+    setState(() {
+      isCheckingFavorite = true;
+    });
+
+    try {
+      final result = await FavoritesService.checkFavoriteStatus(
+        currentUserId!,
+        currentSongId!,
+      );
+
+      if (result['success'] == true) {
+        setState(() {
+          isFavorite = result['isFavorite'] ?? false;
+        });
+      }
+    } catch (e) {
+      print('Error checking favorite status: $e');
+    } finally {
+      setState(() {
+        isCheckingFavorite = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    currentUserId = await UserService.getUserID();
+    currentSongId = widget.id;
+    if (currentUserId == null) {
+      _showErrorSnackBar('Please log in to add favorites');
+      return;
+    }
+
+    if (currentSongId == null) {
+      _showErrorSnackBar('Song information not available');
+      return;
+    }
+
+    setState(() {
+      isCheckingFavorite = true;
+    });
+
+    try {
+      if (isFavorite) {
+        // Remove from favorites
+        final result = await FavoritesService.removeFromFavorites(
+          userId: currentUserId!,
+          songId: currentSongId!,
+        );
+
+        if (result['success'] == true) {
+          setState(() {
+            isFavorite = false;
+          });
+          _showSuccessSnackBar('Removed from favorites');
+        } else {
+          _showErrorSnackBar(
+            result['message'] ?? 'Failed to remove from favorites',
+          );
+        }
+      } else {
+        // Add to favorites
+        final result = await FavoritesService.addToFavorites(
+          userId: currentUserId!,
+          songId: currentSongId!,
+          songName: widget.song,
+          artistName: widget.artist,
+          songImage: widget.backgroundImage,
+        );
+
+        if (result['success'] == true) {
+          setState(() {
+            isFavorite = true;
+          });
+          _showSuccessSnackBar('Added to favorites');
+        } else {
+          _showErrorSnackBar(result['message'] ?? 'Failed to add to favorites');
+        }
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error updating favorites: $e');
+    } finally {
+      setState(() {
+        isCheckingFavorite = false;
+      });
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
+  }
+
+  Future<void> _showSetListSelectionBottomSheet({
+    required String userId,
+    required int songId,
+    required String songName,
+    required String artistName,
+    required String songImage,
+    required String lyricsFormat,
+    required Map<String, String> lyrics,
+  }) async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF2A2A2A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SetListSelectionBottomSheet(
+          userId: userId,
+          songId: songId,
+          songName: songName,
+          artistName: artistName,
+          songImage: songImage,
+          lyricsFormat: lyricsFormat,
+          lyrics: lyrics,
+        );
+      },
+    );
+  }
+
+  Future<void> _addToSetList() async {
+    try {
+      // You'll need to get the song ID - modify this based on how you store song IDs
+      // For now, I'm assuming you pass it as a parameter or get it from a service
+      final songId =
+          widget.id; // Implement this method based on your data structure
+      final currentUserId = await UserService.getUserID();
+
+      // if (songId == null) {
+      //   _showErrorSnackBar('Song ID not found');
+      //   return;
+      // }
+
+      // Prepare lyrics data - combine all current lyrics
+      final lyricsData = <String, String>{};
+      multiLanguageLyrics.forEach((key, value) {
+        if (value.isNotEmpty && !key.contains('error')) {
+          lyricsData[key] = value;
+        }
+      });
+
+      await _showSetListSelectionBottomSheet(
+        userId: currentUserId,
+        songId: songId,
+        songName: widget.song,
+        artistName: widget.artist,
+        songImage: widget.backgroundImage,
+        lyricsFormat: selectedLyricsFormat,
+        lyrics: lyricsData,
+      );
+    } catch (e) {
+      _showErrorSnackBar('Error adding to setlist: $e');
+    }
+  }
+
+  Future<int?> _getSongId() async {
+    try {
+      // Option 1: If you pass song ID as a parameter to MusicPlayer
+      // return widget.songId;
+
+      // Option 2: If you need to fetch it from your service
+      final result = await _songService.getSongIdByName(
+        widget.song,
+        widget.artist,
+      );
+      if (result['success'] == true) {
+        return result['songId'];
+      }
+      return null;
+    } catch (e) {
+      print('Error getting song ID: $e');
+      return null;
+    }
+  }
+
+  // Add this method to show error messages:
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  // You'll also need to add a method to your SongService to get song ID by name:
+  // Add this to your SongService class:
+
+  Future<void> loadPremiumStatus() async {
+    final ispremiun = await UserService.getIsPremium();
+    setState(() {
+      isPremium = ispremiun == '1';
+      print('premium status $isPremium');
+    });
   }
 
   Future<void> _initializePlayer() async {
@@ -51,11 +300,13 @@ class _MusicPlayerState extends State<MusicPlayer> {
     final lyricsFormat = await HowToReadLyricsService.getLyricsFormat();
     final fontSize = await FontSettingsService.getFontSize();
     final boldText = await FontSettingsService.getBoldText();
+    final color = await ColorService.getColor();
 
     setState(() {
       selectedLyricsFormat = lyricsFormat;
       baseFontSize = fontSize;
       isBoldText = boldText;
+      selectedLyricsColor = color;
       isLoadingLyrics = true;
     });
 
@@ -308,7 +559,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
                   Text(
                     lyrics,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.95),
+                      color: selectedLyricsColor.withOpacity(0.95),
                       fontSize: FontSettingsService.getAdjustedFontSize(
                         baseFontSize,
                         languageCode,
@@ -359,7 +610,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
       return Text(
         lyrics,
         style: TextStyle(
-          color: Colors.white.withOpacity(0.9),
+          color: selectedLyricsColor.withOpacity(0.95),
           fontSize: FontSettingsService.getAdjustedFontSize(
             baseFontSize,
             languageCode,
@@ -376,10 +627,12 @@ class _MusicPlayerState extends State<MusicPlayer> {
   Future<void> _reloadFontSettings() async {
     final fontSize = await FontSettingsService.getFontSize();
     final boldText = await FontSettingsService.getBoldText();
+    final color = await ColorService.getColor();
 
     setState(() {
       baseFontSize = fontSize;
       isBoldText = boldText;
+      selectedLyricsColor = color;
     });
   }
 
@@ -566,18 +819,108 @@ class _MusicPlayerState extends State<MusicPlayer> {
                       ],
                     ),
                   ),
-                  // Favorite button
-                  IconButton(
-                    icon: Icon(
-                      isFavorite ? Icons.favorite : Icons.favorite_border,
-                      color: isFavorite ? Colors.red : Colors.white,
-                      size: 24,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        isFavorite = !isFavorite;
-                      });
-                    },
+                  Row(
+                    children: [
+                      // Favorite button
+                      IconButton(
+                        icon:
+                            isCheckingFavorite
+                                ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                                : Icon(
+                                  isFavorite
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isFavorite ? Colors.red : Colors.white,
+                                  size: 24,
+                                ),
+                        onPressed: isCheckingFavorite ? null : _toggleFavorite,
+                      ),
+
+                      IconButton(
+                        icon: Icon(
+                          Icons.more_vert_rounded,
+                          color:
+                              Colors
+                                  .white, // You might want to keep this consistent now
+                          size: 24,
+                        ),
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  ListTile(
+                                    leading: Icon(Icons.share),
+                                    title: Text('Share'),
+                                    trailing:
+                                        isPremium == false
+                                            ? Icon(
+                                              Icons.lock,
+                                              color: Colors.grey,
+                                              size: 20,
+                                            )
+                                            : null,
+                                    onTap: () {
+                                      Navigator.pop(
+                                        context,
+                                      ); // Close the bottom sheet
+                                      // Add your share functionality here
+                                    },
+                                  ),
+                                  ListTile(
+                                    leading: Icon(Icons.playlist_add),
+                                    title: Text('My Set List'),
+                                    trailing:
+                                        isPremium == false
+                                            ? Icon(
+                                              Icons.lock,
+                                              color: Colors.grey,
+                                              size: 20,
+                                            )
+                                            : null,
+                                    onTap:
+                                        isPremium == false
+                                            ? null
+                                            : () {
+                                              Navigator.pop(context);
+                                              _addToSetList();
+                                            },
+                                  ),
+                                  ListTile(
+                                    leading: Icon(Icons.lyrics),
+                                    trailing:
+                                        isPremium == false
+                                            ? Icon(
+                                              Icons.lock,
+                                              color: Colors.grey,
+                                              size: 20,
+                                            )
+                                            : null,
+
+                                    title: Text('How to Read Lyrics'),
+                                    onTap:
+                                        isPremium == false
+                                            ? null
+                                            : _changeLyricsFormat,
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -643,14 +986,14 @@ class _MusicPlayerState extends State<MusicPlayer> {
                       ),
                       const Spacer(),
                       // Lyrics format selector button
-                      IconButton(
-                        icon: const Icon(
-                          Icons.format_list_bulleted,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: _changeLyricsFormat,
-                      ),
+                      // IconButton(
+                      //   icon: const Icon(
+                      //     Icons.format_list_bulleted,
+                      //     color: Colors.white,
+                      //     size: 20,
+                      //   ),
+                      //   onPressed: _changeLyricsFormat,
+                      // ),
                       // Toggle lyrics/info button
                       IconButton(
                         icon: Icon(
@@ -918,6 +1261,339 @@ class _MusicPlayerState extends State<MusicPlayer> {
   @override
   void dispose() {
     _songService.dispose();
+    super.dispose();
+  }
+}
+
+// Add these imports to the top of your MusicPlayer file:
+
+// Add this widget class at the very bottom of your MusicPlayer file (outside all other classes):
+
+class SetListSelectionBottomSheet extends StatefulWidget {
+  final String userId;
+  final int songId;
+  final String songName;
+  final String artistName;
+  final String songImage;
+  final String lyricsFormat;
+  final Map<String, String> lyrics;
+
+  const SetListSelectionBottomSheet({
+    super.key,
+    required this.userId,
+    required this.songId,
+    required this.songName,
+    required this.artistName,
+    required this.songImage,
+    required this.lyricsFormat,
+    required this.lyrics,
+  });
+
+  @override
+  State<SetListSelectionBottomSheet> createState() =>
+      _SetListSelectionBottomSheetState();
+}
+
+class _SetListSelectionBottomSheetState
+    extends State<SetListSelectionBottomSheet> {
+  List<SetListFolder> folders = [];
+  bool isLoading = true;
+  final TextEditingController _newFolderController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFolders();
+  }
+
+  Future<void> _loadFolders() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final result = await SetListService.getFolders(widget.userId);
+      if (result['success'] == true) {
+        setState(() {
+          folders =
+              (result['folders'] as List)
+                  .map((folderJson) => SetListFolder.fromJson(folderJson))
+                  .toList();
+        });
+      }
+    } catch (e) {
+      print('Error loading folders: $e');
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _createNewFolder(String folderName) async {
+    try {
+      final result = await SetListService.createFolder(
+        widget.userId,
+        folderName,
+      );
+      if (result['success'] == true) {
+        await _loadFolders();
+        _showSuccessMessage('Folder created successfully');
+      } else {
+        _showErrorMessage(result['message'] ?? 'Failed to create folder');
+      }
+    } catch (e) {
+      _showErrorMessage('Error creating folder: $e');
+    }
+  }
+
+  Future<void> _addSongToFolder(SetListFolder folder) async {
+    try {
+      String savedLyrics = '';
+      widget.lyrics.forEach((key, value) {
+        if (value.isNotEmpty) {
+          savedLyrics += '$key: $value\n\n';
+        }
+      });
+
+      final result = await SetListService.addSongToFolder(
+        folderId: folder.id,
+        songId: widget.songId,
+        songName: widget.songName,
+        artistName: widget.artistName,
+        songImage: widget.songImage,
+        lyricsFormat: widget.lyricsFormat,
+        savedLyrics: savedLyrics,
+      );
+
+      if (result['success'] == true) {
+        Navigator.pop(context);
+        _showSuccessMessage('Song added to ${folder.folderName}');
+      } else {
+        _showErrorMessage(result['message'] ?? 'Failed to add song');
+      }
+    } catch (e) {
+      _showErrorMessage('Error adding song: $e');
+    }
+  }
+
+  void _showErrorMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showSuccessMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.7,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Add to Set List',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child:
+                        widget.songImage.startsWith('http')
+                            ? Image.network(
+                              widget.songImage,
+                              fit: BoxFit.cover,
+                              errorBuilder:
+                                  (context, error, stackTrace) => Container(
+                                    color: Colors.grey[700],
+                                    child: const Icon(
+                                      Icons.music_note,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                            )
+                            : Image.asset(
+                              widget.songImage,
+                              fit: BoxFit.cover,
+                              errorBuilder:
+                                  (context, error, stackTrace) => Container(
+                                    color: Colors.grey[700],
+                                    child: const Icon(
+                                      Icons.music_note,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                            ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.songName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        widget.artistName,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.add, color: Colors.blue),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _newFolderController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      hintText: 'Create new set list...',
+                      hintStyle: TextStyle(color: Colors.white60),
+                      border: InputBorder.none,
+                    ),
+                    onSubmitted: (value) {
+                      if (value.trim().isNotEmpty) {
+                        _createNewFolder(value.trim());
+                        _newFolderController.clear();
+                      }
+                    },
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    if (_newFolderController.text.trim().isNotEmpty) {
+                      _createNewFolder(_newFolderController.text.trim());
+                      _newFolderController.clear();
+                    }
+                  },
+                  icon: const Icon(Icons.check, color: Colors.blue),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          const Text(
+            'Existing Set Lists',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Expanded(
+            child:
+                isLoading
+                    ? const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
+                    : folders.isEmpty
+                    ? const Center(
+                      child: Text(
+                        'No set lists yet.\nCreate your first one above!',
+                        style: TextStyle(color: Colors.white60, fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                    : ListView.builder(
+                      itemCount: folders.length,
+                      itemBuilder: (context, index) {
+                        final folder = folders[index];
+                        return ListTile(
+                          leading: const Icon(
+                            Icons.folder,
+                            color: Colors.orange,
+                          ),
+                          title: Text(
+                            folder.folderName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${folder.songCount} songs',
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.add_circle_outline,
+                            color: Colors.white70,
+                          ),
+                          onTap: () => _addSongToFolder(folder),
+                        );
+                      },
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _newFolderController.dispose();
     super.dispose();
   }
 }

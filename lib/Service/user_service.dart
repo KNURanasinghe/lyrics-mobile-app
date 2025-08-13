@@ -9,6 +9,7 @@ class UserService {
   static const String _baseUrl = 'http://145.223.21.62:3100/api/auth';
   static const String _baseUrl1 = 'http://145.223.21.62:3100/api';
   static const String _userIDKey = 'userId';
+  static const String _isPremium = 'isPremium';
   final http.Client client;
 
   UserService({http.Client? client}) : client = client ?? http.Client();
@@ -26,6 +27,26 @@ class UserService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt(_userIDKey);
+      return userId != null ? userId.toString() : '';
+    } catch (e) {
+      print('Error loading user ID: $e');
+      return '';
+    }
+  }
+
+  static Future<void> saveIsPremium(int isPremium) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_isPremium, isPremium);
+    } catch (e) {
+      print('Error saving user ID: $e');
+    }
+  }
+
+  static Future<String> getIsPremium() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt(_isPremium);
       return userId != null ? userId.toString() : '';
     } catch (e) {
       print('Error loading user ID: $e');
@@ -136,6 +157,7 @@ class UserService {
       if (response.statusCode == 200) {
         // Save user ID after successful login
         await saveuserID(responseData['user']['id']);
+        await saveIsPremium(responseData['user']['isPremium']);
         print('user login data ${responseData['user']}');
         return {
           'success': true,

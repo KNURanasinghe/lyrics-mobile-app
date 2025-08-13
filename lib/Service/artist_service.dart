@@ -7,6 +7,8 @@ class ArtistModel {
   final String? bio;
   final int? albumCount;
   final int? songCount;
+  final String? language;
+  final List<String>? languages;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -17,6 +19,8 @@ class ArtistModel {
     this.bio,
     this.albumCount,
     this.songCount,
+    this.language,
+    this.languages,
     this.createdAt,
     this.updatedAt,
   });
@@ -27,8 +31,13 @@ class ArtistModel {
       name: json['name'] ?? '',
       image: json['image'],
       bio: json['bio'],
-      albumCount: json['album_count'],
-      songCount: json['song_count'],
+      albumCount: json['album_count'] ?? json['albumCount'],
+      songCount: json['song_count'] ?? json['songCount'],
+      language: json['language'],
+      languages:
+          json['languages'] != null
+              ? List<String>.from(json['languages'])
+              : null,
       createdAt:
           json['created_at'] != null
               ? DateTime.parse(json['created_at'])
@@ -62,6 +71,7 @@ class ArtistService {
 
       if (result['success']) {
         final List<dynamic> artistsData = result['data']['data'] ?? [];
+        print('Artists Data: $artistsData');
         final List<ArtistModel> artists =
             artistsData.map((json) => ArtistModel.fromJson(json)).toList();
 
@@ -74,6 +84,43 @@ class ArtistService {
         return {
           'success': false,
           'message': result['message'] ?? 'Failed to fetch artists',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'An error occurred: ${e.toString()}',
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> getArtistsByLanguage(String language) async {
+    try {
+      final response = await _apiService.get('/artists/language/$language');
+
+      if (response['statusCode'] == 200) {
+        final data = response['data'];
+        if (data['success'] == true) {
+          final List<dynamic> artistsData = data['data'] ?? [];
+          final List<ArtistModel> artists =
+              artistsData.map((json) => ArtistModel.fromJson(json)).toList();
+
+          return {
+            'success': true,
+            'artists': artists,
+            'language': data['language'],
+            'languageDisplayName': data['languageDisplayName'],
+          };
+        } else {
+          return {
+            'success': false,
+            'message': data['error'] ?? 'Failed to fetch artists by language',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to load data: ${response['statusCode']}',
         };
       }
     } catch (e) {

@@ -2,11 +2,13 @@ import 'package:lyrics/Service/base_api.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:lyrics/Service/language_service.dart';
+
 class AlbumModel {
   final int? id;
-  final String name;
+  final String name; // Changed to non-nullable
   final String? image;
-  final int artistId;
+  final int artistId; // Changed to non-nullable
   final String? artistName;
   final String? artistImage;
   final String? releaseDate;
@@ -32,9 +34,9 @@ class AlbumModel {
   factory AlbumModel.fromJson(Map<String, dynamic> json) {
     return AlbumModel(
       id: json['id'],
-      name: json['name'] ?? '',
+      name: json['name'] ?? 'Unknown Album', // Provide default value
       image: json['image'],
-      artistId: json['artist_id'] ?? 0,
+      artistId: json['artist_id'] ?? 0, // Provide default value
       artistName: json['artist_name'],
       artistImage: json['artist_image'],
       releaseDate: json['release_date'],
@@ -72,12 +74,25 @@ class AlbumService {
   // Get all albums
   Future<Map<String, dynamic>> getAllAlbums() async {
     try {
-      final result = await _apiService.get('/albums');
+      final language = await LanguageService.getLanguage();
+      print('language selected in ablbum $language');
+      final result = await _apiService.get('/language/$language');
 
       if (result['success']) {
         final List<dynamic> albumsData = result['data']['data'] ?? [];
+        print('Albums Data: $albumsData');
+
+        // Add type checking before parsing
         final List<AlbumModel> albums =
-            albumsData.map((json) => AlbumModel.fromJson(json)).toList();
+            albumsData.map((item) {
+              if (item is AlbumModel) {
+                return item; // Already an AlbumModel, no need to parse
+              } else if (item is Map<String, dynamic>) {
+                return AlbumModel.fromJson(item); // Parse from JSON
+              } else {
+                throw Exception('Invalid album data type: ${item.runtimeType}');
+              }
+            }).toList();
 
         return {
           'success': true,
@@ -88,6 +103,46 @@ class AlbumService {
         return {
           'success': false,
           'message': result['message'] ?? 'Failed to fetch albums',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'An error occurred: ${e.toString()}',
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> getAlbumsByLanguage(String language) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/albums/language/$language'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final List<dynamic> albumsData = data['data'] ?? [];
+          final List<AlbumModel> albums =
+              albumsData.map((json) => AlbumModel.fromJson(json)).toList();
+
+          return {
+            'success': true,
+            'albums': albums,
+            'language': data['language'],
+            'languageDisplayName': data['languageDisplayName'],
+          };
+        } else {
+          return {
+            'success': false,
+            'message': data['error'] ?? 'Failed to fetch albums by language',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to load data: ${response.statusCode}',
         };
       }
     } catch (e) {

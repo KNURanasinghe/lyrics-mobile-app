@@ -247,6 +247,7 @@ class _AllSongsState extends State<AllSongs> {
               song: songData['songname'] ?? 'Unknown Song',
               artist: songData['artist_name'] ?? _getArtistName(),
               lyrics: songData[lang],
+              id: songData['id'] ?? 0,
               // Add any other parameters your MusicPlayer needs
             ),
       ),
@@ -264,84 +265,72 @@ class SongCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        height: 80,
+      child: Row(
+        children: [
+          // Album Art
+          Container(
+            width: 60,
+            height: 60,
+            margin: const EdgeInsets.all(10),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _buildImage(),
+            ),
+          ),
 
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: const Color(0xFF666666).withOpacity(0.5),
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-        ),
-        child: Row(
-          children: [
-            // Album Art
-            Container(
-              width: 60,
-              height: 60,
-              margin: const EdgeInsets.all(10),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _buildImage(),
+          // Song Info
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    song['songname'] ?? 'Unknown Song',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    song['artist_name'] ?? 'Unknown Artist',
+                    style: const TextStyle(
+                      color: Color(0xFF8F8F8F),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
+          ),
 
-            // Song Info
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 8,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      song['songname'] ?? 'Unknown Song',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      song['artist_name'] ?? 'Unknown Artist',
-                      style: const TextStyle(
-                        color: Color(0xFF8F8F8F),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Play Button
-            // Padding(
-            //   padding: const EdgeInsets.only(right: 16),
-            //   child: Container(
-            //     width: 40,
-            //     height: 40,
-            //     decoration: BoxDecoration(
-            //       shape: BoxShape.circle,
-            //       color: Colors.white.withOpacity(0.2),
-            //     ),
-            //     child: const Icon(
-            //       Icons.play_arrow,
-            //       color: Colors.white,
-            //       size: 20,
-            //     ),
-            //   ),
-            // ),
-          ],
-        ),
+          // Play Button
+          // Padding(
+          //   padding: const EdgeInsets.only(right: 16),
+          //   child: Container(
+          //     width: 40,
+          //     height: 40,
+          //     decoration: BoxDecoration(
+          //       shape: BoxShape.circle,
+          //       color: Colors.white.withOpacity(0.2),
+          //     ),
+          //     child: const Icon(
+          //       Icons.play_arrow,
+          //       color: Colors.white,
+          //       size: 20,
+          //     ),
+          //   ),
+          // ),
+        ],
       ),
     );
   }

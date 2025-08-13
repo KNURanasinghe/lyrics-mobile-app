@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:lyrics/Service/base_api.dart';
+import 'package:lyrics/Service/setlist_service.dart';
 
 class SongModel {
   final int? id;
@@ -146,6 +150,7 @@ class LyricsModel {
 
 class SongService {
   final BaseApiService _apiService;
+  static const String baseUrl = '145.223.21.62:3100';
 
   SongService({BaseApiService? apiService})
     : _apiService = apiService ?? BaseApiService();
@@ -239,6 +244,30 @@ class SongService {
         'success': false,
         'message': 'An error occurred: ${e.toString()}',
       };
+    }
+  }
+
+  static Map<String, dynamic> _handleResponse(http.Response response) {
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load data: ${response.statusCode}');
+    }
+  }
+
+  Future<Map<String, dynamic>> getSongIdByName(
+    String songName,
+    String artistName,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/songs/get-id'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'songName': songName, 'artistName': artistName}),
+      );
+      return _handleResponse(response);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to get song ID: $e'};
     }
   }
 

@@ -4,7 +4,9 @@ import 'package:lyrics/Const/const.dart';
 import 'package:lyrics/Models/artist_model.dart';
 import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Models/user_model.dart';
+import 'package:lyrics/Screens/DrawerScreens/featured_songs.dart';
 import 'package:lyrics/Screens/DrawerScreens/how_ro_read_lyrics.dart';
+import 'package:lyrics/Screens/DrawerScreens/my_set_list.dart';
 import 'package:lyrics/Screens/DrawerScreens/privacy_policy.dart';
 import 'package:lyrics/Screens/DrawerScreens/setting_screen.dart';
 import 'package:lyrics/Screens/DrawerScreens/worship_note_screen.dart';
@@ -15,6 +17,7 @@ import 'package:lyrics/Screens/language_screen.dart';
 import 'package:lyrics/Screens/music_player.dart';
 import 'package:lyrics/Service/album_service.dart';
 import 'package:lyrics/Service/artist_service.dart';
+import 'package:lyrics/Service/language_service.dart';
 import 'package:lyrics/Service/search_service.dart';
 import 'package:lyrics/Service/song_service.dart';
 import 'package:lyrics/Service/user_service.dart';
@@ -52,9 +55,14 @@ class _HomePageState extends State<HomePage> {
   UserModel? _currentUser;
   Map<String, dynamic>? _profileDetails;
 
+  String? currentLanguage;
+  String? languageDisplayName;
+
   // Loading states
   bool isLoadingArtists = true;
   bool isLoadingAlbums = true;
+
+  bool isPremium = false;
 
   int _currentCarouselIndex = 0;
   final CarouselSliderController _carouselController =
@@ -69,12 +77,44 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadData() async {
-    await Future.wait([
-      _loadArtists(),
-      _loadAlbums(),
-      _loadLatestAlbums(),
-      _loadProfileData(),
-    ]);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final List<Future> loads = [
+      loadPremiumStatus().catchError(
+        (e) => print('premium status load error: $e'),
+      ),
+      _loadProfileData().catchError((e) => print('Profile load error: $e')),
+      _loadArtists().catchError((e) => print('Artists load error: $e')),
+      // _loadAlbums().catchError((e) => print('Albums load error: $e')),
+      getLang().catchError((e) => print('lang album load error: $e')),
+      _loadLatestAlbums().catchError((e) => print('Latest albums error: $e')),
+    ];
+
+    try {
+      await Future.wait(loads);
+    } catch (e) {
+      print('Composite load error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> loadPremiumStatus() async {
+    final ispremiun = await UserService.getIsPremium();
+    setState(() {
+      isPremium = ispremiun == '1';
+    });
+  }
+
+  Future<void> getLang() async {
+    final lang = await LanguageService.getLanguage();
+    final langcode = LanguageService.getLanguageCode(lang);
+    _loadAlbumsByLanguage(langcode);
   }
 
   Future<void> _loadProfileData() async {
@@ -97,6 +137,8 @@ class _HomePageState extends State<HomePage> {
         final profileResult = await _userService.getFullProfile(
           _currentUser!.id.toString(),
         );
+
+        print('profile result in home ${profileResult['profile']}');
         if (profileResult['success']) {
           _profileDetails = profileResult['profile'] as Map<String, dynamic>?;
         }
@@ -135,19 +177,25 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadArtists() async {
     try {
-      final result = await _artistService.getAllArtists();
-      print('art ${result['artists']}');
+      setState(() => isLoadingArtists = true);
+
+      // Get the current language
+      final lang = await LanguageService.getLanguage();
+      final langcode = LanguageService.getLanguageCode(lang);
+
+      // Use the language-specific endpoint
+      final result = await _artistService.getArtistsByLanguage(langcode);
+      print('Artists by language response: $result');
+
       if (result['success']) {
-        final artistsList = result['artists'] as List<dynamic>?;
         setState(() {
-          artists = artistsList?.cast<ArtistModel>() ?? [];
+          artists = result['artists'] ?? [];
           isLoadingArtists = false;
+          currentLanguage = result['language'];
+          languageDisplayName = result['languageDisplayName'];
         });
       } else {
-        setState(() {
-          isLoadingArtists = false;
-        });
-        // Show error message
+        setState(() => isLoadingArtists = false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -157,32 +205,130 @@ class _HomePageState extends State<HomePage> {
         }
       }
     } catch (e) {
-      setState(() {
-        isLoadingArtists = false;
-      });
+      setState(() => isLoadingArtists = false);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading artists: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading artists: ${e.toString()}')),
+        );
       }
     }
   }
+  // Future<void> _loadArtists() async {
+  //   try {
+  //     final result = await _artistService.getAllArtists();
+  //     print('artist data in home: $result'); // Print the entire result first
 
-  Future<void> _loadAlbums() async {
+  //     if (result['success']) {
+  //       // No need to cast here since getAllArtists already returns List<ArtistModel>
+  //       setState(() {
+  //         artists = result['artists'] ?? [];
+  //         isLoadingArtists = false;
+  //       });
+  //     } else {
+  //       setState(() {
+  //         isLoadingArtists = false;
+  //       });
+  //       if (mounted) {
+  //         ScaffoldMessenger.of(context).showSnackBar(
+  //           SnackBar(
+  //             content: Text(result['message'] ?? 'Failed to load artists'),
+  //           ),
+  //         );
+  //       }
+  //     }
+  //   } catch (e) {
+  //     setState(() {
+  //       isLoadingArtists = false;
+  //     });
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text('Error loading artists: ${e.toString()}')),
+  //       );
+  //     }
+  //   }
+  // }
+
+  // Future<void> _loadAlbums() async {
+  //   try {
+  //     setState(() => isLoadingAlbums = true);
+
+  //     final result = await _albumService.getAllAlbums();
+  //     print('Raw albums API response: ${result.toString()}');
+
+  //     if (result['success'] == true) {
+  //       // Handle both List<dynamic> and List<AlbumModel> cases
+  //       final List<dynamic> rawAlbums = result['albums'] ?? [];
+  //       final List<AlbumModel> loadedAlbums = [];
+
+  //       for (var albumData in rawAlbums) {
+  //         try {
+  //           AlbumModel album;
+  //           if (albumData is AlbumModel) {
+  //             album = albumData; // Already an AlbumModel
+  //           } else if (albumData is Map<String, dynamic>) {
+  //             album = AlbumModel.fromJson(albumData); // Parse from JSON
+  //           } else {
+  //             print('Invalid album data type: ${albumData.runtimeType}');
+  //             continue;
+  //           }
+  //           loadedAlbums.add(album);
+  //         } catch (e) {
+  //           print('Failed to parse album: $albumData');
+  //           print('Error: $e');
+  //         }
+  //       }
+
+  //       setState(() {
+  //         albums = loadedAlbums;
+  //         isLoadingAlbums = false;
+  //       });
+  //     } else {
+  //       setState(() => isLoadingAlbums = false);
+  //       if (mounted) {
+  //         ScaffoldMessenger.of(context).showSnackBar(
+  //           SnackBar(
+  //             content: Text(result['message'] ?? 'Failed to load albums'),
+  //           ),
+  //         );
+  //       }
+  //     }
+  //   } catch (e, stack) {
+  //     print('Error in _loadAlbums: $e');
+  //     print('Stack trace: $stack');
+  //     setState(() => isLoadingAlbums = false);
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text('Error loading albums: ${e.toString()}')),
+  //       );
+  //     }
+  //   }
+  // }
+
+  Future<void> _loadAlbumsByLanguage(String language) async {
     try {
-      final result = await _albumService.getAllAlbums();
-      print('albums ${result['albums']}');
-      if (result['success']) {
-        final albumsList = result['albums'] as List<dynamic>?;
+      setState(() => isLoadingAlbums = true);
+
+      final result = await _albumService.getAlbumsByLanguage(language);
+      print('Albums by language response: ${result.toString()}');
+
+      if (result['success'] == true) {
+        final List<AlbumModel> loadedAlbums =
+            (result['albums'] as List<dynamic>)
+                .map(
+                  (album) =>
+                      album is AlbumModel ? album : AlbumModel.fromJson(album),
+                )
+                .toList();
+
         setState(() {
-          albums = albumsList?.cast<AlbumModel>() ?? [];
+          albums = loadedAlbums;
           isLoadingAlbums = false;
+          // You can also store the language info if needed
+          currentLanguage = result['language'];
+          languageDisplayName = result['languageDisplayName'];
         });
       } else {
-        setState(() {
-          isLoadingAlbums = false;
-        });
-        // Show error message
+        setState(() => isLoadingAlbums = false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -191,14 +337,14 @@ class _HomePageState extends State<HomePage> {
           );
         }
       }
-    } catch (e) {
-      setState(() {
-        isLoadingAlbums = false;
-      });
+    } catch (e, stack) {
+      print('Error in _loadAlbumsByLanguage: $e');
+      print('Stack trace: $stack');
+      setState(() => isLoadingAlbums = false);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading albums: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading albums: ${e.toString()}')),
+        );
       }
     }
   }
@@ -382,6 +528,7 @@ class _HomePageState extends State<HomePage> {
                       'assets/Rectangle 32.png',
                   song: song.songname,
                   artist: song.artistName ?? 'Unknown Artist',
+                  id: song.id!,
                 ),
           ),
         );
@@ -433,41 +580,43 @@ class _HomePageState extends State<HomePage> {
                         left: 20,
                         top: 20,
                         bottom: 20,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              'New Album Released',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: MediaQuery.of(context).size.width * 0.5,
-                              child: Text(
-                                album.name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                'New Album Released',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              album.artistName ?? 'Unknown Artist',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: MediaQuery.of(context).size.width * 0.5,
+                                child: Text(
+                                  album.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 4),
+                              Text(
+                                album.artistName ?? 'Unknown Artist',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       // Hero Image
@@ -922,54 +1071,70 @@ class _HomePageState extends State<HomePage> {
                 _buildDrawerItem(
                   Icons.star_outline,
                   'Featured Songs',
-                  onTap: () {
-                    // Navigator.pop(context);
-                    // Navigator.push(
-                    //   context,
-                    //   MaterialPageRoute(
-                    //     builder: (context) => WorshipNotesScreen(),
-                    //   ),
-                    // );
-                  },
+                  isPremium: !isPremium,
+                  onTap:
+                      isPremium
+                          ? () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FeaturedSongs(),
+                              ),
+                            );
+                          }
+                          : null,
                 ),
                 _buildDrawerItem(
                   Icons.bookmark_outline,
                   'My Set List',
-                  onTap: () {
-                    // Navigator.pop(context);
-                    // Navigator.push(
-                    //   context,
-                    //   MaterialPageRoute(
-                    //     builder: (context) => WorshipNotesScreen(),
-                    //   ),
-                    // );
-                  },
+                  isPremium: !isPremium,
+                  onTap:
+                      isPremium
+                          ? () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => MySetList(),
+                              ),
+                            );
+                          }
+                          : null,
                 ),
                 _buildDrawerItem(
                   Icons.note_outlined,
                   'Worship Notes',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => WorshipNotesScreen(),
-                      ),
-                    );
-                  },
+                  isPremium: !isPremium,
+                  onTap:
+                      isPremium
+                          ? () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => WorshipNotesScreen(),
+                              ),
+                            );
+                          }
+                          : null,
                 ),
                 _buildDrawerItem(
                   Icons.article_outlined,
                   'How to Read Lyrics',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HowToReadLyrics(),
-                      ),
-                    );
-                  },
+                  isPremium: !isPremium,
+                  onTap:
+                      isPremium
+                          ? () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => HowToReadLyrics(),
+                              ),
+                            );
+                          }
+                          : null,
                 ),
                 _buildDrawerItem(Icons.search_outlined, 'Search Songs'),
                 _buildDrawerItem(
@@ -1015,15 +1180,22 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildDrawerItem(IconData icon, String title, {Function? onTap}) {
+  Widget _buildDrawerItem(
+    IconData icon,
+    String title, {
+    Function? onTap,
+    bool isPremium = false,
+  }) {
     return ListTile(
       leading: Icon(icon, color: Colors.white, size: 24),
+      trailing:
+          isPremium ? Icon(Icons.lock, color: Colors.white, size: 20) : null,
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
           fontSize: 22,
-          fontWeight: FontWeight.w500,
+          // fontWeight: FontWeight.w500,
         ),
       ),
       onTap: () {

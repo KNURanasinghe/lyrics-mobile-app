@@ -1,7 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:lyrics/FireBase/auth_service.dart';
-import 'package:lyrics/Models/user_model.dart';
+
 import 'package:lyrics/Screens/AuthScreens/signup_page.dart';
 import 'package:lyrics/Screens/HomeScreen/home_screen.dart';
 import 'package:lyrics/Service/user_service.dart';

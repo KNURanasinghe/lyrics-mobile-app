@@ -124,14 +124,17 @@ class PremiumScreen extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            _buildFeatureItem('Stay on top of the news'),
-                            SizedBox(height: 8),
-                            _buildFeatureItem('Personalized recommendations'),
-                            SizedBox(height: 8),
-                            _buildFeatureItem('Ad free experience'),
-                            SizedBox(height: 8),
-                            _buildFeatureItem(
-                              'Topics of interest selected by you',
+                            // _buildFeatureItem('Stay on top of the news'),
+                            // SizedBox(height: 8),
+                            // _buildFeatureItem('Personalized recommendations'),
+                            // SizedBox(height: 8),
+                            // _buildFeatureItem('Ad free experience'),
+                            // SizedBox(height: 8),
+                            // _buildFeatureItem(
+                            //   'Topics of interest selected by you',
+                            // ),
+                            Text(
+                              'Your support helps us share more worship songs, keep the app running smoothly, and continue our work — Glory to God.\n\nඔබගේ සහයෝගය අපට තවත් නමස්කාර ගීතිකා බෙදා ගැනීමට, යෙදුම සුමටව ක්‍රියාත්මක කර තබා ගැනීමට සහ අපගේ කාර්යය දිගටම කරගෙන යාමට උපකාරී වේ - දෙවියන් වහන්සේට මහිමය. \n\nஉங்கள் ஆதரவு எங்களுக்கு இன்னும் அதிகமான ஆராதனை பாடல்களைப் பகிரவும் , செயலிகளை  சீராக இயக்க வைக்கவும், எங்கள் பணியைத் தொடரவும்  உதவுகிறது - தேவனுக்கே மகி',
                             ),
                           ],
                         ),
@@ -156,7 +159,7 @@ class PremiumScreen extends StatelessWidget {
                               ),
                             ),
                             child: Text(
-                              'Upgrade Premium \$4.00',
+                              'Upgrade Premium \$2.99',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
