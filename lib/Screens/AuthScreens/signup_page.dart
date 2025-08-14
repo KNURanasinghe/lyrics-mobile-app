@@ -31,6 +31,50 @@ class _SignupPageState extends State<SignupPage> {
       TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
+  Future<void> googleSignUp() async {
+    print('Google sign up initiated');
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+
+    try {
+      print('Calling signInWithGoogle');
+      final result = await FireBaseAuthServices().signUpWithGoogle();
+      print('Google sign in result: $result');
+
+      print('User signed in successfully: ');
+      if (result == true) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => HomePage()),
+          (route) => false, // This removes all previous routes
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      print('Google sign in error: ${e.message}');
+      if (mounted) {
+        setState(() {
+          errorMessage = e.message ?? 'An unknown error occurred';
+        });
+      }
+    } catch (e) {
+      print('Unexpected error during Google sign in: $e');
+      if (mounted) {
+        setState(() {
+          errorMessage = 'An unexpected error occurred';
+        });
+      }
+    } finally {
+      print('Google sign in process completed');
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
   Future<void> signUp() async {
     // Validate all fields are filled
     if (_nameController.text.isEmpty ||
@@ -142,7 +186,7 @@ class _SignupPageState extends State<SignupPage> {
                   AuthViaBigButton(
                     name: 'Continue with Google',
                     path: 'assets/Google.png',
-                    ontap: () {},
+                    ontap: googleSignUp,
                     isLoading: isLoading,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.03),

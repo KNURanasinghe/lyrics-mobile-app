@@ -4,6 +4,7 @@ import 'package:lyrics/Const/const.dart';
 import 'package:lyrics/Models/artist_model.dart';
 import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Models/user_model.dart';
+import 'package:lyrics/Screens/DrawerScreens/about_app.dart';
 import 'package:lyrics/Screens/DrawerScreens/featured_songs.dart';
 import 'package:lyrics/Screens/DrawerScreens/how_ro_read_lyrics.dart';
 import 'package:lyrics/Screens/DrawerScreens/my_set_list.dart';
@@ -547,7 +548,7 @@ class _HomePageState extends State<HomePage> {
           carouselController: _carouselController,
           itemCount: latestAlbums.length,
           options: CarouselOptions(
-            height: 140,
+            height: 160,
             viewportFraction: 0.9,
             enlargeCenterPage: true,
             autoPlay: true,
@@ -575,6 +576,41 @@ class _HomePageState extends State<HomePage> {
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
+                      Positioned(
+                        right: -5,
+                        top: -20,
+                        bottom: 0,
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                            topRight: Radius.circular(16),
+                            bottomRight: Radius.circular(16),
+                          ),
+                          child: SizedBox(
+                            width: 180,
+                            height: 160,
+                            child:
+                                album.image != null
+                                    ? Image.network(
+                                      album.image!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (
+                                        context,
+                                        error,
+                                        stackTrace,
+                                      ) {
+                                        return Image.asset(
+                                          'assets/hero.png',
+                                          fit: BoxFit.cover,
+                                        );
+                                      },
+                                    )
+                                    : Image.asset(
+                                      'assets/hero.png',
+                                      fit: BoxFit.cover,
+                                    ),
+                          ),
+                        ),
+                      ),
                       // Text Content
                       Positioned(
                         left: 20,
@@ -619,42 +655,8 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                       ),
+
                       // Hero Image
-                      Positioned(
-                        right: -5,
-                        top: -20,
-                        bottom: 0,
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.only(
-                            topRight: Radius.circular(16),
-                            bottomRight: Radius.circular(16),
-                          ),
-                          child: SizedBox(
-                            width: 180,
-                            height: 160,
-                            child:
-                                album.image != null
-                                    ? Image.network(
-                                      album.image!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (
-                                        context,
-                                        error,
-                                        stackTrace,
-                                      ) {
-                                        return Image.asset(
-                                          'assets/hero.png',
-                                          fit: BoxFit.cover,
-                                        );
-                                      },
-                                    )
-                                    : Image.asset(
-                                      'assets/hero.png',
-                                      fit: BoxFit.cover,
-                                    ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -1171,7 +1173,43 @@ class _HomePageState extends State<HomePage> {
                     );
                   },
                 ),
-                _buildDrawerItem(Icons.info_outline, 'About this App'),
+                _buildDrawerItem(
+                  Icons.info_outline,
+                  'About this App',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AboutApp()),
+                    );
+                  },
+                ),
+                Divider(color: Colors.white, thickness: 1),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'A Vision by Johnson Shan',
+
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      Text(
+                        'Designed & Developed by JS Christian Productions ',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      Text(
+                        'www.rockofpraise.org',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      Text(
+                        '© 2025 The Rock of Praise. All rights reserved.',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

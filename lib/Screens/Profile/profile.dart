@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/FireBase/auth_service.dart';
 import 'package:lyrics/Screens/Profile/edit_profile.dart';
 import 'package:lyrics/Service/language_service.dart';
 import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/widgets/main_background.dart';
 import 'package:lyrics/widgets/profile_section_container.dart';
 import 'package:lyrics/Models/user_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Profile extends StatefulWidget {
   const Profile({super.key});
@@ -20,6 +22,7 @@ class _ProfileState extends State<Profile> {
   bool _isLoading = true;
   String? _errorMessage;
   String _preferredLanguage = 'English';
+  String? proemail;
 
   @override
   void initState() {
@@ -80,6 +83,10 @@ class _ProfileState extends State<Profile> {
     await _loadPreferredLanguage();
   }
 
+  Future<void> emailImage() async {
+    proemail = await FireBaseAuthServices.getemailProfileImage();
+  }
+
   // Helper method to safely get profile data
   String _getProfileValue(String key, String defaultValue) {
     if (_profileDetails == null) return defaultValue;
@@ -94,7 +101,7 @@ class _ProfileState extends State<Profile> {
     if (_profileDetails![key] != null) {
       return _profileDetails![key].toString();
     }
-
+    defaultValue = proemail!;
     return defaultValue;
   }
 

@@ -116,7 +116,7 @@ class UserService {
           'confirmpassword': user.password,
         }),
       );
-
+      print('response ${response.body}');
       final responseData = json.decode(response.body);
 
       if (response.statusCode == 201) {

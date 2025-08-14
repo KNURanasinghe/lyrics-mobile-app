@@ -1,4 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:lyrics/FireBase/auth_service.dart';
 
 import 'package:lyrics/Screens/AuthScreens/signup_page.dart';
 import 'package:lyrics/Screens/HomeScreen/home_screen.dart';
@@ -33,6 +35,50 @@ class _LoginPageState extends State<LoginPage> {
   //     });
   //   }
   // }
+
+  Future<void> googleSignIn() async {
+    print('Google sign up initiated');
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+
+    try {
+      print('Calling signInWithGoogle');
+      final result = await FireBaseAuthServices().signInWithGoogle();
+      print('Google sign in result: $result');
+
+      print('User signed in successfully: ');
+      if (result == true) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => HomePage()),
+          (route) => false, // This removes all previous routes
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      print('Google sign in error: ${e.message}');
+      if (mounted) {
+        setState(() {
+          errorMessage = e.message ?? 'An unknown error occurred';
+        });
+      }
+    } catch (e) {
+      print('Unexpected error during Google sign in: $e');
+      if (mounted) {
+        setState(() {
+          errorMessage = 'An unexpected error occurred';
+        });
+      }
+    } finally {
+      print('Google sign in process completed');
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
 
   Future<void> signIn() async {
     // Validate all fields are filled
@@ -175,7 +221,13 @@ class _LoginPageState extends State<LoginPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      AuthViaButtons(name: 'Google', path: 'assets/Google.png'),
+                      GestureDetector(
+                        onTap: googleSignIn,
+                        child: AuthViaButtons(
+                          name: 'Google',
+                          path: 'assets/Google.png',
+                        ),
+                      ),
                       AuthViaButtons(
                         name: 'Apple',
                         path: 'assets/AppleInc.png',

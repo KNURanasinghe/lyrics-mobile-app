@@ -1,14 +1,38 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:lyrics/Models/user_model.dart';
+import 'package:lyrics/Service/user_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FireBaseAuthServices {
+  final UserService _userService = UserService();
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
+  static const String imageUrl = 'imageUrl';
 
   User? get currentUser => _firebaseAuth.currentUser;
   Stream<User?> get authStateChange => _firebaseAuth.authStateChanges();
+  static Future<void> saveIsPremium(String imageUrl) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(imageUrl, imageUrl);
+    } catch (e) {
+      print('Error saving user ID: $e');
+    }
+  }
 
-  Future<User?> signInWithGoogle() async {
+  static Future<String> getemailProfileImage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString(imageUrl);
+      return userId != null ? userId.toString() : '';
+    } catch (e) {
+      print('Error loading getemailProfileImage $e');
+      return '';
+    }
+  }
+
+  Future<bool> signUpWithGoogle() async {
     try {
       print('calling signInWithGoogle method');
       // Sign out first to clear any previous sessions
@@ -17,40 +41,54 @@ class FireBaseAuthServices {
       // Trigger Google Sign-In flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       print('calling signInWithGoogle method  googleUser $googleUser');
-      if (googleUser == null) {
-        print('Google sign in cancelled by user');
-        return null;
-      }
-
-      // Get authentication details
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      print('calling signInWithGoogle method  googleAuth $googleAuth');
-      // Create Firebase credential
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      print(
+        'calling signInWithGoogle method  googleUser ${googleUser!.displayName}',
       );
-      print('calling signInWithGoogle method  credential $credential');
-      // Sign in to Firebase
-      try {
-        final UserCredential userCredential = await _firebaseAuth
-            .signInWithCredential(credential);
-        print(
-          'calling signInWithGoogle method  userCredential $userCredential',
-        );
-        print(
-          'Google sign in successful - User ID: ${userCredential.user?.uid}',
-        );
-        return userCredential.user;
-      } catch (e) {
-        print('calling signInWithGoogle method  userCredential error $e');
+      final newUser = UserModel(
+        fullname: googleUser.displayName!,
+        email: googleUser.email,
+        phonenumber: '07xxxxxxx',
+        password: '1a2a3a4a',
+      );
+      await saveIsPremium(googleUser.photoUrl!);
+      final result = await _userService.signUp(newUser);
+      print('signup results ${result['success']}');
+      if (result['success'] == true) {
+        return true;
       }
-    } catch (e) {
+      return false;
+    } on FirebaseException catch (e) {
       print('Google sign in error: $e');
       rethrow; // Let the caller handle the exception
     }
-    return null;
+  }
+
+  Future<bool> signInWithGoogle() async {
+    try {
+      print('calling signInWithGoogle method');
+      // Sign out first to clear any previous sessions
+      await _googleSignIn.signOut();
+
+      // Trigger Google Sign-In flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      print('calling signInWithGoogle method  googleUser $googleUser');
+      print(
+        'calling signInWithGoogle method  googleUser ${googleUser!.displayName}',
+      );
+      await saveIsPremium(googleUser.photoUrl!);
+      final result = await _userService.login(
+        emailOrPhone: googleUser.email,
+        password: '1a2a3a4a',
+      );
+      print('signup results ${result['success']}');
+      if (result['success'] == true) {
+        return true;
+      }
+      return false;
+    } on FirebaseException catch (e) {
+      print('Google sign in error: $e');
+      rethrow; // Let the caller handle the exception
+    }
   }
 
   Future<void> signInWithEmailAndPassword(String email, String password) async {
