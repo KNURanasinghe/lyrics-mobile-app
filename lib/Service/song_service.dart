@@ -21,6 +21,7 @@ class SongModel {
   final String? albumImage;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final int synced; // 0 = not synced, 1 = synced, -1 = marked for deletion
 
   SongModel({
     this.id,
@@ -39,6 +40,7 @@ class SongModel {
     this.createdAt,
     this.image,
     this.updatedAt,
+    this.synced = 0,
   });
 
   factory SongModel.fromJson(Map<String, dynamic> json) {
@@ -65,6 +67,7 @@ class SongModel {
           json['updated_at'] != null
               ? DateTime.parse(json['updated_at'])
               : null,
+      synced: json['synced'] ?? 0,
     );
   }
 
@@ -79,6 +82,28 @@ class SongModel {
       'duration': duration,
       'track_number': trackNumber,
       'image': image,
+    };
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'songname': songname,
+      'lyrics_si': lyricsSi,
+      'lyrics_en': lyricsEn,
+      'lyrics_ta': lyricsTa,
+      'artist_id': artistId,
+      'album_id': albumId,
+      'duration': duration,
+      'track_number': trackNumber,
+      'artist_name': artistName,
+      'artist_image': artistImage,
+      'album_name': albumName,
+      'album_image': albumImage,
+      'image': image,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'synced': synced,
     };
   }
 
@@ -116,6 +141,46 @@ class SongModel {
       default:
         return null;
     }
+  }
+
+  SongModel copyWith({
+    int? id,
+    String? songname,
+    String? lyricsSi,
+    String? lyricsEn,
+    String? lyricsTa,
+    int? artistId,
+    int? albumId,
+    int? duration,
+    int? trackNumber,
+    String? artistName,
+    String? artistImage,
+    String? albumName,
+    String? image,
+    String? albumImage,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    int? synced,
+  }) {
+    return SongModel(
+      id: id ?? this.id,
+      songname: songname ?? this.songname,
+      lyricsSi: lyricsSi ?? this.lyricsSi,
+      lyricsEn: lyricsEn ?? this.lyricsEn,
+      lyricsTa: lyricsTa ?? this.lyricsTa,
+      artistId: artistId ?? this.artistId,
+      albumId: albumId ?? this.albumId,
+      duration: duration ?? this.duration,
+      trackNumber: trackNumber ?? this.trackNumber,
+      artistName: artistName ?? this.artistName,
+      artistImage: artistImage ?? this.artistImage,
+      albumName: albumName ?? this.albumName,
+      image: image ?? this.image,
+      albumImage: albumImage ?? this.albumImage,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      synced: synced ?? this.synced,
+    );
   }
 }
 

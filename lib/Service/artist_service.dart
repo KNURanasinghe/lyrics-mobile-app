@@ -11,6 +11,7 @@ class ArtistModel {
   final List<String>? languages;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final int synced; // 0 = not synced, 1 = synced, -1 = marked for deletion
 
   ArtistModel({
     this.id,
@@ -23,6 +24,7 @@ class ArtistModel {
     this.languages,
     this.createdAt,
     this.updatedAt,
+    this.synced = 0,
   });
 
   factory ArtistModel.fromJson(Map<String, dynamic> json) {
@@ -46,15 +48,60 @@ class ArtistModel {
           json['updated_at'] != null
               ? DateTime.parse(json['updated_at'])
               : null,
+      synced: json['synced'] ?? 0,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'id': id, 'name': name, 'image': image, 'bio': bio};
+    return {
+      'id': id,
+      'name': name,
+      'image': image,
+      'bio': bio,
+      'language': language,
+      'album_count': albumCount,
+      'song_count': songCount,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'synced': synced,
+    };
   }
 
   Map<String, dynamic> toCreateJson() {
-    return {'name': name, 'image': image, 'bio': bio};
+    return {
+      'name': name,
+      'image': image,
+      'bio': bio,
+      'language': language ?? 'en',
+    };
+  }
+
+  ArtistModel copyWith({
+    int? id,
+    String? name,
+    String? image,
+    String? bio,
+    int? albumCount,
+    int? songCount,
+    String? language,
+    List<String>? languages,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    int? synced,
+  }) {
+    return ArtistModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      image: image ?? this.image,
+      bio: bio ?? this.bio,
+      albumCount: albumCount ?? this.albumCount,
+      songCount: songCount ?? this.songCount,
+      language: language ?? this.language,
+      languages: languages ?? this.languages,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      synced: synced ?? this.synced,
+    );
   }
 }
 

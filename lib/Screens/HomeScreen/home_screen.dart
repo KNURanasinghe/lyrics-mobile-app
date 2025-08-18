@@ -1,9 +1,15 @@
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:lyrics/Const/const.dart';
 import 'package:lyrics/Models/artist_model.dart';
 import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Models/user_model.dart';
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
+import 'package:lyrics/OfflineService/offline_album_service.dart';
+import 'package:lyrics/OfflineService/offline_artist_service.dart';
+import 'package:lyrics/OfflineService/offline_user_service.dart';
+import 'package:lyrics/OfflineService/sync_manager.dart';
 import 'package:lyrics/Screens/DrawerScreens/about_app.dart';
 import 'package:lyrics/Screens/DrawerScreens/featured_songs.dart';
 import 'package:lyrics/Screens/DrawerScreens/how_ro_read_lyrics.dart';
@@ -34,17 +40,26 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  final SearchService _searchService = SearchService(
-    baseUrl: 'http://145.223.21.62:3100',
-  );
-  final UserService _userService = UserService();
+  // final SearchService _searchService = SearchService(
+  //   baseUrl: 'http://145.223.21.62:3100',
+  // );
+  // final UserService _userService = UserService();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   List<dynamic> _searchResults = [];
 
   // API Services
-  final ArtistService _artistService = ArtistService();
-  final AlbumService _albumService = AlbumService();
+  // final ArtistService _artistService = ArtistService();
+  // final AlbumService _albumService = AlbumService();
+
+  final OfflineArtistService _artistService = OfflineArtistService();
+  final OfflineAlbumService _albumService = OfflineAlbumService();
+  final OfflineUserService _userService = OfflineUserService();
+  late final OfflineSearchService _searchService;
+
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
+  final SyncManager _syncManager = SyncManager();
+  bool _isOnline = false;
 
   // Data lists
   List<ArtistModel> artists = [];
@@ -74,7 +89,85 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _searchService = OfflineSearchService(baseUrl: 'http://145.223.21.62:3100');
+    _initializeConnectivity();
     _loadData();
+  }
+
+  // Future<void> _loadData() async {
+  //   setState(() {
+  //     _isLoading = true;
+  //     _errorMessage = null;
+  //   });
+
+  //   final List<Future> loads = [
+  //     loadPremiumStatus().catchError(
+  //       (e) => print('premium status load error: $e'),
+  //     ),
+  //     _loadProfileData().catchError((e) => print('Profile load error: $e')),
+  //     _loadArtists().catchError((e) => print('Artists load error: $e')),
+  //     // _loadAlbums().catchError((e) => print('Albums load error: $e')),
+  //     getLang().catchError((e) => print('lang album load error: $e')),
+  //     _loadLatestAlbums().catchError((e) => print('Latest albums error: $e')),
+  //   ];
+
+  //   try {
+  //     await Future.wait(loads);
+  //   } catch (e) {
+  //     print('Composite load error: $e');
+  //   } finally {
+  //     if (mounted) {
+  //       setState(() => _isLoading = false);
+  //     }
+  //   }
+  // }
+
+  Future<void> _initializeConnectivity() async {
+    // Check initial connectivity
+    _isOnline = await _connectivityManager.isConnected();
+
+    // Listen to connectivity changes
+    _connectivityManager.connectivityStream.listen((result) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Trigger sync when coming back online
+        if (_isOnline && wasOffline) {
+          _performBackgroundSync();
+        }
+      }
+    });
+  }
+
+  Future<void> _performBackgroundSync() async {
+    try {
+      await _syncManager.performFullSync();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Data synchronized'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        // Reload data after sync
+        _loadData();
+      }
+    } catch (e) {
+      print('Background sync failed: $e');
+    }
   }
 
   Future<void> _loadData() async {
@@ -89,7 +182,6 @@ class _HomePageState extends State<HomePage> {
       ),
       _loadProfileData().catchError((e) => print('Profile load error: $e')),
       _loadArtists().catchError((e) => print('Artists load error: $e')),
-      // _loadAlbums().catchError((e) => print('Albums load error: $e')),
       getLang().catchError((e) => print('lang album load error: $e')),
       _loadLatestAlbums().catchError((e) => print('Latest albums error: $e')),
     ];

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lyrics/Screens/AuthScreens/login_page.dart';
+import 'package:lyrics/Screens/HomeScreen/home_screen.dart';
+import 'package:lyrics/Service/user_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,13 +14,22 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 3), () async {
       // Navigate to the next screen after the splash screen
       // For example, you can use Navigator.pushReplacementNamed(context, '/home');
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-      );
+      final page = await UserService.getUserID();
+      print('pageeeee $page');
+      if (page != '') {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => HomePage()),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
     });
   }
 

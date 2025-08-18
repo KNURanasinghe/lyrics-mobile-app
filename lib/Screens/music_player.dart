@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/OfflineService/offline_user_service.dart';
 import 'package:lyrics/Screens/DrawerScreens/setting_screen.dart';
 import 'package:lyrics/Service/color_service.dart';
-import 'package:lyrics/Service/favorites_service.dart';
 import 'package:lyrics/Service/language_service.dart';
-
 import 'package:lyrics/Service/lyrics_service.dart';
-import 'package:lyrics/Service/setting_service.dart';
-import 'package:lyrics/Service/song_service.dart';
-import 'package:lyrics/Service/user_service.dart';
-
 import 'package:lyrics/Service/setlist_service.dart';
+import 'package:lyrics/Service/setting_service.dart';
 import 'package:lyrics/Service/user_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// Import offline services
+import 'package:lyrics/OfflineService/offline_song_service.dart';
+import 'package:lyrics/OfflineService/offline_favorites_service.dart';
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class MusicPlayer extends StatefulWidget {
   final String backgroundImage;
@@ -41,8 +43,16 @@ class _MusicPlayerState extends State<MusicPlayer> {
   bool showLyrics = true;
   String selectedLyricsFormat = 'tamil_only';
   Map<String, String> multiLanguageLyrics = {};
-  final SongService _songService = SongService();
+
+  // Replace with offline services
+  final OfflineSongService _songService = OfflineSongService();
+  final OfflineSetlistService _setlistService = OfflineSetlistService();
+  final OfflineFavoritesService _favoritesService = OfflineFavoritesService();
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
+
   bool isLoadingLyrics = false;
+  bool _isOnline = false;
+  String? _dataSource;
 
   List<String> _currentDisplayOrder = [];
 
@@ -60,11 +70,60 @@ class _MusicPlayerState extends State<MusicPlayer> {
   @override
   void initState() {
     super.initState();
+    _initializeConnectivity();
     _initializePlayer();
     loadPremiumStatus();
     _reloadFontSettings();
     _reloadColorSettings();
     initializeFavoriteStatus();
+  }
+
+  Future<void> _initializeConnectivity() async {
+    // Check initial connectivity
+    _isOnline = await _connectivityManager.isConnected();
+
+    // Listen to connectivity changes
+    _connectivityManager.connectivityStream.listen((result) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Sync when coming back online
+        if (_isOnline && wasOffline) {
+          _syncDataWhenOnline();
+        }
+      }
+    });
+  }
+
+  Future<void> _syncDataWhenOnline() async {
+    try {
+      // Sync favorites
+      await _favoritesService.syncPendingChanges();
+      // Sync setlists
+      await _setlistService.syncPendingChanges();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Data synchronized'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      print('Background sync failed: $e');
+    }
   }
 
   Future<void> _reloadColorSettings() async {
@@ -84,10 +143,9 @@ class _MusicPlayerState extends State<MusicPlayer> {
   Future<void> initializeFavoriteStatus() async {
     try {
       currentUserId = await UserService.getUserID();
-      // You need to get the song ID. For now, using a placeholder
       setState(() {
         currentSongId = widget.id;
-      }); // Implement this method
+      });
 
       if (currentUserId != null && currentSongId != null) {
         await _checkFavoriteStatus();
@@ -105,7 +163,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
     });
 
     try {
-      final result = await FavoritesService.checkFavoriteStatus(
+      final result = await _favoritesService.checkFavoriteStatus(
         currentUserId!,
         currentSongId!,
       );
@@ -113,7 +171,10 @@ class _MusicPlayerState extends State<MusicPlayer> {
       if (result['success'] == true) {
         setState(() {
           isFavorite = result['isFavorite'] ?? false;
+          _dataSource = result['source'];
         });
+
+        _showDataSourceIndicator(_dataSource ?? 'unknown');
       }
     } catch (e) {
       print('Error checking favorite status: $e');
@@ -127,6 +188,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
   Future<void> _toggleFavorite() async {
     currentUserId = await UserService.getUserID();
     currentSongId = widget.id;
+
     if (currentUserId == null) {
       _showErrorSnackBar('Please log in to add favorites');
       return;
@@ -144,7 +206,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
     try {
       if (isFavorite) {
         // Remove from favorites
-        final result = await FavoritesService.removeFromFavorites(
+        final result = await _favoritesService.removeFromFavorites(
           userId: currentUserId!,
           songId: currentSongId!,
         );
@@ -153,7 +215,15 @@ class _MusicPlayerState extends State<MusicPlayer> {
           setState(() {
             isFavorite = false;
           });
-          _showSuccessSnackBar('Removed from favorites');
+
+          final isPending = result['pending_sync'] ?? false;
+          if (isPending) {
+            _showSuccessSnackBar(
+              'Removed from favorites (will sync when online)',
+            );
+          } else {
+            _showSuccessSnackBar('Removed from favorites');
+          }
         } else {
           _showErrorSnackBar(
             result['message'] ?? 'Failed to remove from favorites',
@@ -161,7 +231,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
         }
       } else {
         // Add to favorites
-        final result = await FavoritesService.addToFavorites(
+        final result = await _favoritesService.addToFavorites(
           userId: currentUserId!,
           songId: currentSongId!,
           songName: widget.song,
@@ -173,7 +243,13 @@ class _MusicPlayerState extends State<MusicPlayer> {
           setState(() {
             isFavorite = true;
           });
-          _showSuccessSnackBar('Added to favorites');
+
+          final isPending = result['pending_sync'] ?? false;
+          if (isPending) {
+            _showSuccessSnackBar('Added to favorites (will sync when online)');
+          } else {
+            _showSuccessSnackBar('Added to favorites');
+          }
         } else {
           _showErrorSnackBar(result['message'] ?? 'Failed to add to favorites');
         }
@@ -185,6 +261,38 @@ class _MusicPlayerState extends State<MusicPlayer> {
         isCheckingFavorite = false;
       });
     }
+  }
+
+  void _showDataSourceIndicator(String source) {
+    if (!mounted) return;
+
+    String message;
+    Color color;
+
+    switch (source) {
+      case 'online':
+        message = '🌐 Live data';
+        color = Colors.green;
+        break;
+      case 'cache':
+        message = '📱 Cached data';
+        color = Colors.orange;
+        break;
+      case 'local':
+        message = '💾 Local data';
+        color = Colors.blue;
+        break;
+      default:
+        return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: 1),
+        backgroundColor: color,
+      ),
+    );
   }
 
   void _showSuccessSnackBar(String message) {
@@ -210,7 +318,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (BuildContext context) {
-        return SetListSelectionBottomSheet(
+        return OfflineSetListSelectionBottomSheet(
           userId: userId,
           songId: songId,
           songName: songName,
@@ -218,6 +326,8 @@ class _MusicPlayerState extends State<MusicPlayer> {
           songImage: songImage,
           lyricsFormat: lyricsFormat,
           lyrics: lyrics,
+          setlistService: _setlistService,
+          isOnline: _isOnline,
         );
       },
     );
@@ -225,16 +335,13 @@ class _MusicPlayerState extends State<MusicPlayer> {
 
   Future<void> _addToSetList() async {
     try {
-      // You'll need to get the song ID - modify this based on how you store song IDs
-      // For now, I'm assuming you pass it as a parameter or get it from a service
-      final songId =
-          widget.id; // Implement this method based on your data structure
+      final songId = widget.id;
       final currentUserId = await UserService.getUserID();
 
-      // if (songId == null) {
-      //   _showErrorSnackBar('Song ID not found');
-      //   return;
-      // }
+      if (currentUserId.isEmpty) {
+        _showErrorSnackBar('Please log in to add to setlist');
+        return;
+      }
 
       // Prepare lyrics data - combine all current lyrics
       final lyricsData = <String, String>{};
@@ -258,41 +365,16 @@ class _MusicPlayerState extends State<MusicPlayer> {
     }
   }
 
-  Future<int?> _getSongId() async {
-    try {
-      // Option 1: If you pass song ID as a parameter to MusicPlayer
-      // return widget.songId;
-
-      // Option 2: If you need to fetch it from your service
-      final result = await _songService.getSongIdByName(
-        widget.song,
-        widget.artist,
-      );
-      if (result['success'] == true) {
-        return result['songId'];
-      }
-      return null;
-    } catch (e) {
-      print('Error getting song ID: $e');
-      return null;
-    }
-  }
-
-  // Add this method to show error messages:
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
-  // You'll also need to add a method to your SongService to get song ID by name:
-  // Add this to your SongService class:
-
   Future<void> loadPremiumStatus() async {
     final ispremiun = await UserService.getIsPremium();
     setState(() {
       isPremium = ispremiun == '1';
-      print('premium status $isPremium');
     });
   }
 
@@ -322,16 +404,26 @@ class _MusicPlayerState extends State<MusicPlayer> {
     try {
       print('Loading lyrics for format: $selectedLyricsFormat');
 
+      setState(() {
+        isLoadingLyrics = true;
+      });
+
       final result = await _songService.getSongLyricsByFormat(
         widget.song,
         selectedLyricsFormat,
       );
 
-      print('Full result: $result'); // Debug print
+      print('Lyrics result: $result');
 
       if (result['success'] == true) {
         final lyricsData = result['lyrics'];
         final displayOrderData = result['displayOrder'];
+
+        setState(() {
+          _dataSource = result['source'];
+        });
+
+        _showDataSourceIndicator(_dataSource ?? 'unknown');
 
         if (lyricsData == null) {
           print('Lyrics data is null');
@@ -394,11 +486,17 @@ class _MusicPlayerState extends State<MusicPlayer> {
         }
       } else {
         print('API returned failure: ${result['message']}');
-        // Handle error - set fallback message
         setState(() {
           multiLanguageLyrics.clear();
-          multiLanguageLyrics['error'] =
+          String errorMessage =
               result['message'] ?? 'Lyrics not available for this format';
+
+          // Show offline-specific messages
+          if (!_isOnline && result['source'] == 'cache') {
+            errorMessage += ' (Offline mode)';
+          }
+
+          multiLanguageLyrics['error'] = errorMessage;
         });
       }
     } catch (e, stackTrace) {
@@ -406,7 +504,17 @@ class _MusicPlayerState extends State<MusicPlayer> {
       print('Stack trace: $stackTrace');
       setState(() {
         multiLanguageLyrics.clear();
-        multiLanguageLyrics['error'] = 'Failed to load lyrics: ${e.toString()}';
+        String errorMessage = 'Failed to load lyrics: ${e.toString()}';
+
+        if (!_isOnline) {
+          errorMessage += ' (Offline mode)';
+        }
+
+        multiLanguageLyrics['error'] = errorMessage;
+      });
+    } finally {
+      setState(() {
+        isLoadingLyrics = false;
       });
     }
   }
@@ -424,12 +532,16 @@ class _MusicPlayerState extends State<MusicPlayer> {
         ),
         child: Column(
           children: [
-            const Icon(Icons.error_outline, color: Colors.red, size: 32),
+            Icon(
+              _isOnline ? Icons.error_outline : Icons.cloud_off,
+              color: _isOnline ? Colors.red : Colors.orange,
+              size: 32,
+            ),
             const SizedBox(height: 12),
             Text(
               multiLanguageLyrics['error']!,
-              style: const TextStyle(
-                color: Colors.red,
+              style: TextStyle(
+                color: _isOnline ? Colors.red : Colors.orange,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -437,20 +549,26 @@ class _MusicPlayerState extends State<MusicPlayer> {
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: () async {
-                setState(() {
-                  isLoadingLyrics = true;
-                });
-                await _loadLyricsForCurrentFormat();
-                setState(() {
-                  isLoadingLyrics = false;
-                });
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              onPressed:
+                  _isOnline
+                      ? () async {
+                        setState(() {
+                          isLoadingLyrics = true;
+                        });
+                        await _loadLyricsForCurrentFormat();
+                        setState(() {
+                          isLoadingLyrics = false;
+                        });
+                      }
+                      : null,
+              icon: Icon(_isOnline ? Icons.refresh : Icons.cloud_off),
+              label: Text(_isOnline ? 'Retry' : 'Offline'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.withOpacity(0.2),
-                foregroundColor: Colors.red,
+                backgroundColor:
+                    _isOnline
+                        ? Colors.red.withOpacity(0.2)
+                        : Colors.grey.withOpacity(0.2),
+                foregroundColor: _isOnline ? Colors.red : Colors.grey,
               ),
             ),
           ],
@@ -492,7 +610,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
               const Icon(Icons.warning_amber, color: Colors.orange, size: 32),
               const SizedBox(height: 12),
               Text(
-                'No lyrics available for ${HowToReadLyricsService.getFormatTitle(selectedLyricsFormat)} format',
+                'No lyrics available for ${HowToReadLyricsService.getFormatTitle(selectedLyricsFormat)} format${!_isOnline ? ' (Offline mode)' : ''}',
                 style: const TextStyle(
                   color: Colors.orange,
                   fontSize: 16,
@@ -509,51 +627,11 @@ class _MusicPlayerState extends State<MusicPlayer> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children:
             availableLyrics.map((languageCode) {
-              final languageName =
-                  HowToReadLyricsService.getLanguageDisplayName(languageCode);
               final lyrics = multiLanguageLyrics[languageCode]!;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Language header with improved styling
-                  // Container(
-                  //   margin: const EdgeInsets.only(bottom: 12),
-                  //   padding: const EdgeInsets.symmetric(
-                  //     horizontal: 12,
-                  //     vertical: 8,
-                  //   ),
-                  //   decoration: BoxDecoration(
-                  //     gradient: LinearGradient(
-                  //       colors: [
-                  //         Colors.white.withOpacity(0.2),
-                  //         Colors.white.withOpacity(0.1),
-                  //       ],
-                  //     ),
-                  //     borderRadius: BorderRadius.circular(20),
-                  //     border: Border.all(color: Colors.white.withOpacity(0.3)),
-                  //   ),
-                  //   child: Row(
-                  //     mainAxisSize: MainAxisSize.min,
-                  //     children: [
-                  //       Icon(
-                  //         _getLanguageIcon(languageCode),
-                  //         size: 16,
-                  //         color: Colors.white,
-                  //       ),
-                  //       const SizedBox(width: 8),
-                  //       Text(
-                  //         languageName,
-                  //         style: const TextStyle(
-                  //           color: Colors.white,
-                  //           fontSize: 14,
-                  //           fontWeight: FontWeight.w600,
-                  //           letterSpacing: 0.5,
-                  //         ),
-                  //       ),
-                  //     ],
-                  //   ),
-                  // ),
                   SizedBox(height: 25),
 
                   // Lyrics content with improved styling
@@ -595,7 +673,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
               const Icon(Icons.warning_amber, color: Colors.orange, size: 32),
               const SizedBox(height: 12),
               Text(
-                'Lyrics not available in ${HowToReadLyricsService.getLanguageDisplayName(languageCode)}',
+                'Lyrics not available in ${HowToReadLyricsService.getLanguageDisplayName(languageCode)}${!_isOnline ? ' (Offline mode)' : ''}',
                 style: const TextStyle(
                   color: Colors.orange,
                   fontSize: 16,
@@ -822,6 +900,14 @@ class _MusicPlayerState extends State<MusicPlayer> {
                   ),
                   Row(
                     children: [
+                      // Online/Offline indicator
+                      Icon(
+                        _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                        color: _isOnline ? Colors.green : Colors.orange,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+
                       // Favorite button
                       IconButton(
                         icon:
@@ -849,9 +935,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
                       IconButton(
                         icon: Icon(
                           Icons.more_vert_rounded,
-                          color:
-                              Colors
-                                  .white, // You might want to keep this consistent now
+                          color: Colors.white,
                           size: 24,
                         ),
                         onPressed: () {
@@ -863,8 +947,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
                                 children: <Widget>[
                                   ListTile(
                                     leading: Icon(Icons.settings),
-                                    title: Text('Setting'),
-
+                                    title: Text('Settings'),
                                     onTap: () {
                                       Navigator.pop(context);
                                       Navigator.push(
@@ -874,8 +957,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
                                               (context) =>
                                                   const SettingsScreen(),
                                         ),
-                                      ); // Close the bottom sheet
-                                      // Add your share functionality here
+                                      );
                                     },
                                   ),
                                   ListTile(
@@ -889,24 +971,36 @@ class _MusicPlayerState extends State<MusicPlayer> {
                                               size: 20,
                                             )
                                             : null,
-                                    onTap: () {
-                                      Navigator.pop(
-                                        context,
-                                      ); // Close the bottom sheet
-                                      // Add your share functionality here
-                                    },
+                                    onTap:
+                                        isPremium
+                                            ? () {
+                                              Navigator.pop(context);
+                                              // Add your share functionality here
+                                            }
+                                            : null,
                                   ),
                                   ListTile(
                                     leading: Icon(Icons.playlist_add),
                                     title: Text('My Set List'),
-                                    trailing:
-                                        isPremium == false
-                                            ? Icon(
-                                              Icons.lock,
-                                              color: Colors.grey,
-                                              size: 20,
-                                            )
-                                            : null,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (!_isOnline)
+                                          Icon(
+                                            Icons.cloud_off,
+                                            color: Colors.orange,
+                                            size: 16,
+                                          ),
+                                        if (!_isOnline)
+                                          const SizedBox(width: 4),
+                                        if (isPremium == false)
+                                          Icon(
+                                            Icons.lock,
+                                            color: Colors.grey,
+                                            size: 20,
+                                          ),
+                                      ],
+                                    ),
                                     onTap:
                                         isPremium == false
                                             ? null
@@ -925,7 +1019,6 @@ class _MusicPlayerState extends State<MusicPlayer> {
                                               size: 20,
                                             )
                                             : null,
-
                                     title: Text('How to Read Lyrics'),
                                     onTap:
                                         isPremium == false
@@ -988,30 +1081,52 @@ class _MusicPlayerState extends State<MusicPlayer> {
                         },
                       ),
                       const Spacer(),
-                      // Song title
+                      // Song title with connectivity indicator
                       Expanded(
                         flex: 3,
-                        child: Text(
-                          widget.song,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
+                        child: Column(
+                          children: [
+                            Text(
+                              widget.song,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (_dataSource != null) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getSourceColor(
+                                    _dataSource!,
+                                  ).withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: _getSourceColor(_dataSource!),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  _dataSource!.toUpperCase(),
+                                  style: TextStyle(
+                                    color: _getSourceColor(_dataSource!),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const Spacer(),
-                      // Lyrics format selector button
-                      // IconButton(
-                      //   icon: const Icon(
-                      //     Icons.format_list_bulleted,
-                      //     color: Colors.white,
-                      //     size: 20,
-                      //   ),
-                      //   onPressed: _changeLyricsFormat,
-                      // ),
                       // Toggle lyrics/info button
                       IconButton(
                         icon: Icon(
@@ -1029,59 +1144,6 @@ class _MusicPlayerState extends State<MusicPlayer> {
                   ),
                 ),
 
-                // Format indicator
-                // Container(
-                //   margin: const EdgeInsets.symmetric(horizontal: 16),
-                //   padding: const EdgeInsets.symmetric(
-                //     horizontal: 12,
-                //     vertical: 6,
-                //   ),
-                //   decoration: BoxDecoration(
-                //     color: Colors.white.withOpacity(0.1),
-                //     borderRadius: BorderRadius.circular(20),
-                //     border: Border.all(
-                //       color: Colors.white.withOpacity(0.3),
-                //       width: 1,
-                //     ),
-                //   ),
-                //   child: Row(
-                //     mainAxisSize: MainAxisSize.min,
-                //     children: [
-                //       Icon(
-                //         Icons.format_list_bulleted,
-                //         color: Colors.white70,
-                //         size: 16,
-                //       ),
-                //       const SizedBox(width: 6),
-                //       Text(
-                //         HowToReadLyricsService.getFormatTitle(
-                //           selectedLyricsFormat,
-                //         ),
-                //         style: const TextStyle(
-                //           color: Colors.white70,
-                //           fontSize: 12,
-                //           fontWeight: FontWeight.w500,
-                //         ),
-                //       ),
-                //       if (isLoadingLyrics) ...[
-                //         const SizedBox(width: 8),
-                //         const SizedBox(
-                //           width: 12,
-                //           height: 12,
-                //           child: CircularProgressIndicator(
-                //             strokeWidth: 1.5,
-                //             valueColor: AlwaysStoppedAnimation<Color>(
-                //               Colors.white70,
-                //             ),
-                //           ),
-                //         ),
-                //       ],
-                //     ],
-                //   ),
-                // ),
-
-                //const SizedBox(height: 20),
-
                 // Main content area
                 Expanded(
                   child: Container(
@@ -1097,6 +1159,19 @@ class _MusicPlayerState extends State<MusicPlayer> {
         ),
       ),
     );
+  }
+
+  Color _getSourceColor(String source) {
+    switch (source) {
+      case 'online':
+        return Colors.green;
+      case 'cache':
+        return Colors.orange;
+      case 'local':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildLyricsView() {
@@ -1122,27 +1197,8 @@ class _MusicPlayerState extends State<MusicPlayer> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Lyrics header
-          // Row(
-          //   children: [
-          //     const Icon(Icons.lyrics, color: Colors.white, size: 24),
-          //     const SizedBox(width: 8),
-          //     Text(
-          //       'Lyrics - ${HowToReadLyricsService.getFormatTitle(selectedLyricsFormat)}',
-          //       style: const TextStyle(
-          //         color: Colors.white,
-          //         fontSize: 18,
-          //         fontWeight: FontWeight.bold,
-          //       ),
-          //     ),
-          //   ],
-          // ),
-          //const SizedBox(height: 20),
-
           // Lyrics content based on selected format
           _buildLyricsContent(),
-
-          //const SizedBox(height: 20),
         ],
       ),
     );
@@ -1166,6 +1222,13 @@ class _MusicPlayerState extends State<MusicPlayer> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              const Spacer(),
+              // Connection status
+              Icon(
+                _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: _isOnline ? Colors.green : Colors.orange,
+                size: 20,
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -1180,7 +1243,8 @@ class _MusicPlayerState extends State<MusicPlayer> {
             HowToReadLyricsService.getFormatTitle(selectedLyricsFormat),
           ),
 
-          if (multiLanguageLyrics.isNotEmpty) ...[
+          if (multiLanguageLyrics.isNotEmpty &&
+              !multiLanguageLyrics.containsKey('error')) ...[
             const SizedBox(height: 16),
             _buildInfoCard(
               'Available Languages',
@@ -1191,6 +1255,11 @@ class _MusicPlayerState extends State<MusicPlayer> {
                   )
                   .join(', '),
             ),
+          ],
+
+          if (_dataSource != null) ...[
+            const SizedBox(height: 16),
+            _buildInfoCard('Data Source', _dataSource!.toUpperCase()),
           ],
 
           const SizedBox(height: 32),
@@ -1221,22 +1290,58 @@ class _MusicPlayerState extends State<MusicPlayer> {
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _changeLyricsFormat,
-                  icon: const Icon(Icons.format_list_bulleted),
-                  label: const Text('Change Format'),
+                  onPressed: isPremium ? _changeLyricsFormat : null,
+                  icon: Icon(
+                    isPremium ? Icons.format_list_bulleted : Icons.lock,
+                  ),
+                  label: Text(isPremium ? 'Change Format' : 'Premium Only'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white.withOpacity(0.1),
-                    foregroundColor: Colors.white,
+                    foregroundColor: isPremium ? Colors.white : Colors.grey,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                      side: BorderSide(
+                        color:
+                            isPremium
+                                ? Colors.white.withOpacity(0.3)
+                                : Colors.grey.withOpacity(0.3),
+                      ),
                     ),
                   ),
                 ),
               ),
             ],
           ),
+
+          if (!_isOnline) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off, color: Colors.orange, size: 20),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Offline mode: Some features may be limited',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1283,11 +1388,8 @@ class _MusicPlayerState extends State<MusicPlayer> {
   }
 }
 
-// Add these imports to the top of your MusicPlayer file:
-
-// Add this widget class at the very bottom of your MusicPlayer file (outside all other classes):
-
-class SetListSelectionBottomSheet extends StatefulWidget {
+// Offline SetList Selection Bottom Sheet
+class OfflineSetListSelectionBottomSheet extends StatefulWidget {
   final String userId;
   final int songId;
   final String songName;
@@ -1295,8 +1397,10 @@ class SetListSelectionBottomSheet extends StatefulWidget {
   final String songImage;
   final String lyricsFormat;
   final Map<String, String> lyrics;
+  final OfflineSetlistService setlistService;
+  final bool isOnline;
 
-  const SetListSelectionBottomSheet({
+  const OfflineSetListSelectionBottomSheet({
     super.key,
     required this.userId,
     required this.songId,
@@ -1305,15 +1409,17 @@ class SetListSelectionBottomSheet extends StatefulWidget {
     required this.songImage,
     required this.lyricsFormat,
     required this.lyrics,
+    required this.setlistService,
+    required this.isOnline,
   });
 
   @override
-  State<SetListSelectionBottomSheet> createState() =>
-      _SetListSelectionBottomSheetState();
+  State<OfflineSetListSelectionBottomSheet> createState() =>
+      _OfflineSetListSelectionBottomSheetState();
 }
 
-class _SetListSelectionBottomSheetState
-    extends State<SetListSelectionBottomSheet> {
+class _OfflineSetListSelectionBottomSheetState
+    extends State<OfflineSetListSelectionBottomSheet> {
   List<SetListFolder> folders = [];
   bool isLoading = true;
   final TextEditingController _newFolderController = TextEditingController();
@@ -1330,17 +1436,22 @@ class _SetListSelectionBottomSheetState
     });
 
     try {
-      final result = await SetListService.getFolders(widget.userId);
+      final result = await widget.setlistService.getFolders(widget.userId);
       if (result['success'] == true) {
+        final foldersData = result['data'] as List<dynamic>? ?? [];
         setState(() {
           folders =
-              (result['folders'] as List)
+              foldersData
                   .map((folderJson) => SetListFolder.fromJson(folderJson))
                   .toList();
         });
+
+        // Show data source
+        _showDataSourceIndicator(result['source'] ?? 'unknown');
       }
     } catch (e) {
       print('Error loading folders: $e');
+      _showErrorMessage('Error loading folders: $e');
     } finally {
       setState(() {
         isLoading = false;
@@ -1348,15 +1459,52 @@ class _SetListSelectionBottomSheetState
     }
   }
 
+  void _showDataSourceIndicator(String source) {
+    String message;
+    Color color;
+
+    switch (source) {
+      case 'online':
+        message = '🌐 Live folders';
+        color = Colors.green;
+        break;
+      case 'cache':
+        message = '📱 Cached folders';
+        color = Colors.orange;
+        break;
+      case 'local':
+        message = '💾 Local folders';
+        color = Colors.blue;
+        break;
+      default:
+        return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: 1),
+        backgroundColor: color,
+      ),
+    );
+  }
+
   Future<void> _createNewFolder(String folderName) async {
     try {
-      final result = await SetListService.createFolder(
+      final result = await widget.setlistService.createFolder(
         widget.userId,
         folderName,
       );
+
       if (result['success'] == true) {
         await _loadFolders();
-        _showSuccessMessage('Folder created successfully');
+
+        final isPending = result['pending_sync'] ?? false;
+        if (isPending) {
+          _showSuccessMessage('Folder created locally, will sync when online');
+        } else {
+          _showSuccessMessage('Folder created successfully');
+        }
       } else {
         _showErrorMessage(result['message'] ?? 'Failed to create folder');
       }
@@ -1374,7 +1522,7 @@ class _SetListSelectionBottomSheetState
         }
       });
 
-      final result = await SetListService.addSongToFolder(
+      final result = await widget.setlistService.addSongToFolder(
         folderId: folder.id,
         songId: widget.songId,
         songName: widget.songName,
@@ -1386,7 +1534,13 @@ class _SetListSelectionBottomSheetState
 
       if (result['success'] == true) {
         Navigator.pop(context);
-        _showSuccessMessage('Song added to ${folder.folderName}');
+
+        final isPending = result['pending_sync'] ?? false;
+        if (isPending) {
+          _showSuccessMessage('Song added locally, will sync when online');
+        } else {
+          _showSuccessMessage('Song added to ${folder.folderName}');
+        }
       } else {
         _showErrorMessage(result['message'] ?? 'Failed to add song');
       }
@@ -1426,6 +1580,13 @@ class _SetListSelectionBottomSheetState
                 ),
               ),
               const Spacer(),
+              // Connection indicator
+              Icon(
+                widget.isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: widget.isOnline ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.close, color: Colors.white),
@@ -1534,6 +1695,9 @@ class _SetListSelectionBottomSheetState
                     },
                   ),
                 ),
+                if (!widget.isOnline)
+                  Icon(Icons.cloud_off, color: Colors.orange, size: 16),
+                if (!widget.isOnline) const SizedBox(width: 8),
                 IconButton(
                   onPressed: () {
                     if (_newFolderController.text.trim().isNotEmpty) {
@@ -1565,11 +1729,29 @@ class _SetListSelectionBottomSheetState
                       child: CircularProgressIndicator(color: Colors.white),
                     )
                     : folders.isEmpty
-                    ? const Center(
-                      child: Text(
-                        'No set lists yet.\nCreate your first one above!',
-                        style: TextStyle(color: Colors.white60, fontSize: 14),
-                        textAlign: TextAlign.center,
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            widget.isOnline
+                                ? Icons.folder_open
+                                : Icons.cloud_off,
+                            color: Colors.white60,
+                            size: 48,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            widget.isOnline
+                                ? 'No set lists yet.\nCreate your first one above!'
+                                : 'No set lists available offline.\nConnect to internet to see more.',
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
                     )
                     : ListView.builder(
@@ -1595,9 +1777,21 @@ class _SetListSelectionBottomSheetState
                               fontSize: 12,
                             ),
                           ),
-                          trailing: const Icon(
-                            Icons.add_circle_outline,
-                            color: Colors.white70,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!widget.isOnline)
+                                Icon(
+                                  Icons.cloud_off,
+                                  color: Colors.orange,
+                                  size: 16,
+                                ),
+                              if (!widget.isOnline) const SizedBox(width: 8),
+                              const Icon(
+                                Icons.add_circle_outline,
+                                color: Colors.white70,
+                              ),
+                            ],
                           ),
                           onTap: () => _addSongToFolder(folder),
                         );

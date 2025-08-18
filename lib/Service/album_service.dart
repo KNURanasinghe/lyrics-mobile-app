@@ -4,11 +4,12 @@ import 'dart:convert';
 
 import 'package:lyrics/Service/language_service.dart';
 
+// Enhanced AlbumModel with offline support
 class AlbumModel {
   final int? id;
-  final String name; // Changed to non-nullable
+  final String name;
   final String? image;
-  final int artistId; // Changed to non-nullable
+  final int artistId;
   final String? artistName;
   final String? artistImage;
   final String? releaseDate;
@@ -16,6 +17,7 @@ class AlbumModel {
   final int? songCount;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final int synced; // 0 = not synced, 1 = synced, -1 = marked for deletion
 
   AlbumModel({
     this.id,
@@ -29,14 +31,15 @@ class AlbumModel {
     this.songCount,
     this.createdAt,
     this.updatedAt,
+    this.synced = 0,
   });
 
   factory AlbumModel.fromJson(Map<String, dynamic> json) {
     return AlbumModel(
       id: json['id'],
-      name: json['name'] ?? 'Unknown Album', // Provide default value
+      name: json['name'] ?? 'Unknown Album',
       image: json['image'],
-      artistId: json['artist_id'] ?? 0, // Provide default value
+      artistId: json['artist_id'] ?? 0,
       artistName: json['artist_name'],
       artistImage: json['artist_image'],
       releaseDate: json['release_date'],
@@ -50,6 +53,7 @@ class AlbumModel {
           json['updated_at'] != null
               ? DateTime.parse(json['updated_at'])
               : null,
+      synced: json['synced'] ?? 0,
     );
   }
 
@@ -61,6 +65,53 @@ class AlbumModel {
       'release_date': releaseDate,
       'description': description,
     };
+  }
+
+  Map<String, dynamic> toFullJson() {
+    return {
+      'id': id,
+      'name': name,
+      'image': image,
+      'artist_id': artistId,
+      'artist_name': artistName,
+      'artist_image': artistImage,
+      'release_date': releaseDate,
+      'description': description,
+      'song_count': songCount,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'synced': synced,
+    };
+  }
+
+  AlbumModel copyWith({
+    int? id,
+    String? name,
+    String? image,
+    int? artistId,
+    String? artistName,
+    String? artistImage,
+    String? releaseDate,
+    String? description,
+    int? songCount,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    int? synced,
+  }) {
+    return AlbumModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      image: image ?? this.image,
+      artistId: artistId ?? this.artistId,
+      artistName: artistName ?? this.artistName,
+      artistImage: artistImage ?? this.artistImage,
+      releaseDate: releaseDate ?? this.releaseDate,
+      description: description ?? this.description,
+      songCount: songCount ?? this.songCount,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      synced: synced ?? this.synced,
+    );
   }
 }
 
@@ -75,8 +126,9 @@ class AlbumService {
   Future<Map<String, dynamic>> getAllAlbums() async {
     try {
       final language = await LanguageService.getLanguage();
-      print('language selected in ablbum $language');
-      final result = await _apiService.get('/language/$language');
+      final langcode = LanguageService.getLanguageCode(language);
+      print('language selected in ablbum $langcode');
+      final result = await _apiService.get('/albums/language/$langcode');
 
       if (result['success']) {
         final List<dynamic> albumsData = result['data']['data'] ?? [];

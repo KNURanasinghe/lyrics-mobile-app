@@ -1,6 +1,9 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Models/artist_model.dart';
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
+import 'package:lyrics/OfflineService/offline_artist_service.dart';
 import 'package:lyrics/Service/artist_service.dart';
 import 'package:lyrics/Service/language_service.dart';
 import 'package:lyrics/widgets/main_background.dart';
@@ -18,9 +21,12 @@ class AllSongs extends StatefulWidget {
 }
 
 class _AllSongsState extends State<AllSongs> {
-  final ArtistService _artistService = ArtistService();
+  final OfflineArtistService _artistService = OfflineArtistService();
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
   List<dynamic> songs = [];
   bool isLoading = true;
+  bool _isOnline = false;
+
   String? errorMessage;
 
   @override
@@ -35,6 +41,35 @@ class _AllSongsState extends State<AllSongs> {
     super.dispose();
   }
 
+  Future<void> _initializeConnectivity() async {
+    // Check initial connectivity
+    _isOnline = await _connectivityManager.isConnected();
+
+    // Listen to connectivity changes
+    _connectivityManager.connectivityStream.listen((result) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Reload data when coming back online
+        if (_isOnline && wasOffline) {
+          _refreshSongs();
+        }
+      }
+    });
+  }
+
   Future<void> _loadArtistSongs() async {
     if (widget.artist?.id == null && widget.artistId == null) {
       setState(() {
@@ -45,15 +80,21 @@ class _AllSongsState extends State<AllSongs> {
     }
 
     try {
+      setState(() {
+        isLoading = true;
+        errorMessage = null;
+      });
+
       final artistId = widget.artist?.id ?? widget.artistId!;
       final result = await _artistService.getArtistSongs(artistId);
-      print('songs ${result['songs']}');
+
+      print('Songs result: $result');
+
       if (result['success']) {
         setState(() {
           songs = result['songs'] ?? [];
           isLoading = false;
           errorMessage = null;
-          print('songs $songs');
         });
       } else {
         setState(() {
@@ -66,6 +107,7 @@ class _AllSongsState extends State<AllSongs> {
         errorMessage = 'Error loading songs: $e';
         isLoading = false;
       });
+      print('Error loading artist songs: $e');
     }
   }
 
