@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/Screens/DrawerScreens/setting_screen.dart';
 import 'package:lyrics/Service/color_service.dart';
 import 'package:lyrics/Service/favorites_service.dart';
 import 'package:lyrics/Service/language_service.dart';
@@ -553,7 +554,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
                   //     ],
                   //   ),
                   // ),
-                  SizedBox(height: 5),
+                  SizedBox(height: 25),
 
                   // Lyrics content with improved styling
                   Text(
@@ -861,6 +862,23 @@ class _MusicPlayerState extends State<MusicPlayer> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
                                   ListTile(
+                                    leading: Icon(Icons.settings),
+                                    title: Text('Setting'),
+
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (context) =>
+                                                  const SettingsScreen(),
+                                        ),
+                                      ); // Close the bottom sheet
+                                      // Add your share functionality here
+                                    },
+                                  ),
+                                  ListTile(
                                     leading: Icon(Icons.share),
                                     title: Text('Share'),
                                     trailing:
@@ -1012,55 +1030,55 @@ class _MusicPlayerState extends State<MusicPlayer> {
                 ),
 
                 // Format indicator
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.format_list_bulleted,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        HowToReadLyricsService.getFormatTitle(
-                          selectedLyricsFormat,
-                        ),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (isLoadingLyrics) ...[
-                        const SizedBox(width: 8),
-                        const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white70,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+                // Container(
+                //   margin: const EdgeInsets.symmetric(horizontal: 16),
+                //   padding: const EdgeInsets.symmetric(
+                //     horizontal: 12,
+                //     vertical: 6,
+                //   ),
+                //   decoration: BoxDecoration(
+                //     color: Colors.white.withOpacity(0.1),
+                //     borderRadius: BorderRadius.circular(20),
+                //     border: Border.all(
+                //       color: Colors.white.withOpacity(0.3),
+                //       width: 1,
+                //     ),
+                //   ),
+                //   child: Row(
+                //     mainAxisSize: MainAxisSize.min,
+                //     children: [
+                //       Icon(
+                //         Icons.format_list_bulleted,
+                //         color: Colors.white70,
+                //         size: 16,
+                //       ),
+                //       const SizedBox(width: 6),
+                //       Text(
+                //         HowToReadLyricsService.getFormatTitle(
+                //           selectedLyricsFormat,
+                //         ),
+                //         style: const TextStyle(
+                //           color: Colors.white70,
+                //           fontSize: 12,
+                //           fontWeight: FontWeight.w500,
+                //         ),
+                //       ),
+                //       if (isLoadingLyrics) ...[
+                //         const SizedBox(width: 8),
+                //         const SizedBox(
+                //           width: 12,
+                //           height: 12,
+                //           child: CircularProgressIndicator(
+                //             strokeWidth: 1.5,
+                //             valueColor: AlwaysStoppedAnimation<Color>(
+                //               Colors.white70,
+                //             ),
+                //           ),
+                //         ),
+                //       ],
+                //     ],
+                //   ),
+                // ),
 
                 //const SizedBox(height: 20),
 

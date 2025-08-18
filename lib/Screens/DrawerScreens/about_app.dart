@@ -120,7 +120,7 @@ class _AboutAppState extends State<AboutApp> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const Text(
                       'A Vision by: Johnson Shan',
@@ -143,6 +143,8 @@ class _AboutAppState extends State<AboutApp> {
 
                     // Clickable website link
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: const [
                         Icon(Icons.language, color: Colors.lightBlue, size: 20),
                         SizedBox(width: 8),

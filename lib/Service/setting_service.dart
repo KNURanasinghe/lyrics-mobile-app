@@ -9,7 +9,7 @@ class FontSettingsService {
 
   // Font size options
   static const Map<String, double> fontSizeOptions = {
-    'Small': 16.0,
+    'Small': 12.0,
     'Medium': 18.0,
     'Large': 20.0,
     'Extra Large': 24.0,

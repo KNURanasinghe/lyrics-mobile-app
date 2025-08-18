@@ -291,23 +291,58 @@ class AlbumService {
 
   Future<Map<String, dynamic>> getLatestAlbums() async {
     try {
+      // Get the current selected language
+      final selectedLanguage = await LanguageService.getLanguage();
+
+      // Convert the language to the appropriate code for the API
+      final languageCode = LanguageService.getLanguageCode(selectedLanguage);
+
+      // Build the URL with the language query parameter
+      final uri = Uri.parse(
+        '$_baseUrl/albums/latest',
+      ).replace(queryParameters: {'language': languageCode});
+
       final response = await http.get(
-        Uri.parse('$_baseUrl/albums/latest'),
+        uri,
         headers: {'Content-Type': 'application/json'},
       );
-      print('latest album re ${response.statusCode}');
+
+      print('Latest album request URL: ${uri.toString()}');
+      print('Latest album response status: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        List<AlbumModel> albums =
-            (data['data'] as List)
-                .map((album) => AlbumModel.fromJson(album))
-                .toList();
-        return {'success': true, 'albums': albums};
+        print('Latest album response data: $data');
+
+        // Check if the API response is successful
+        if (data['success'] == true && data['data'] != null) {
+          List<AlbumModel> albums =
+              (data['data'] as List)
+                  .map((album) => AlbumModel.fromJson(album))
+                  .toList();
+
+          return {
+            'success': true,
+            'albums': albums,
+            'language': data['language'] ?? languageCode,
+          };
+        } else {
+          return {
+            'success': false,
+            'message': data['error'] ?? 'No albums data received',
+          };
+        }
       } else {
-        return {'success': false, 'message': 'Failed to load latest albums'};
+        // Handle HTTP error responses
+        final errorData = json.decode(response.body);
+        return {
+          'success': false,
+          'message': errorData['error'] ?? 'Failed to load latest albums',
+        };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      print('Error in getLatestAlbums: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 

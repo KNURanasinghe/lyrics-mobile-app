@@ -40,134 +40,147 @@ class PremiumScreen extends StatelessWidget {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Crown Icon
-                        SizedBox(
-                          width: 80,
-                          height: 80,
-                          child: Image.asset(
-                            'assets/Crown.png',
-                            width: 145,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-
-                        SizedBox(height: 14),
-
-                        // Upgrade Text with PRO Badge
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'UPGRADE',
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                                letterSpacing: 1.0,
-                              ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Crown Icon
+                          SizedBox(
+                            width: 80,
+                            height: 80,
+                            child: Image.asset(
+                              'assets/Crown.png',
+                              width: 145,
+                              fit: BoxFit.cover,
                             ),
-                            SizedBox(width: 12),
-                            Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 4,
+                          ),
+
+                          SizedBox(height: 14),
+
+                          // Upgrade Text with PRO Badge
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'UPGRADE',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                  letterSpacing: 1.0,
+                                ),
                               ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange[400],
-                                borderRadius: BorderRadius.circular(8),
+                              SizedBox(width: 12),
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[400],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'PRO',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          SizedBox(height: 32),
+
+                          // Price
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                '\$2.99',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2C5F7C),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'per month',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          SizedBox(height: 32),
+
+                          // Features List
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // _buildFeatureItem('Stay on top of the news'),
+                              // SizedBox(height: 8),
+                              // _buildFeatureItem('Personalized recommendations'),
+                              // SizedBox(height: 8),
+                              // _buildFeatureItem('Ad free experience'),
+                              // SizedBox(height: 8),
+                              // _buildFeatureItem(
+                              //   'Topics of interest selected by you',
+                              // ),
+                              Text(
+                                textAlign: TextAlign.center,
+                                'Your support helps us share more worship songs, keep the app running smoothly, and continue our work — Glory to God.',
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                textAlign: TextAlign.center,
+                                'ඔබගේ සහයෝගය අපට තවත් නමස්කාර ගීතිකා බෙදා ගැනීමට, යෙදුම සුමටව ක්‍රියාත්මක කර තබා ගැනීමට සහ අපගේ කාර්යය දිගටම කරගෙන යාමට උපකාරී වේ - දෙවියන් වහන්සේට මහිමය.',
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                textAlign: TextAlign.center,
+                                'உங்கள் ஆதரவு எங்களுக்கு இன்னும் அதிகமான ஆராதனை பாடல்களைப் பகிரவும் , செயலிகளை  சீராக இயக்க வைக்கவும், எங்கள் பணியைத் தொடரவும்  உதவுகிறது - தேவனுக்கே மகி',
+                              ),
+                            ],
+                          ),
+
+                          SizedBox(height: 40),
+
+                          // Upgrade Button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                // Handle upgrade action
+                                _showUpgradeDialog(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Color(0xFFB71C1C),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
                               ),
                               child: Text(
-                                'PRO',
+                                'Upgrade Premium \$2.99',
                                 style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-
-                        SizedBox(height: 32),
-
-                        // Price
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text(
-                              '\$2.99',
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF2C5F7C),
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'for 1 month',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        SizedBox(height: 32),
-
-                        // Features List
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // _buildFeatureItem('Stay on top of the news'),
-                            // SizedBox(height: 8),
-                            // _buildFeatureItem('Personalized recommendations'),
-                            // SizedBox(height: 8),
-                            // _buildFeatureItem('Ad free experience'),
-                            // SizedBox(height: 8),
-                            // _buildFeatureItem(
-                            //   'Topics of interest selected by you',
-                            // ),
-                            Text(
-                              'Your support helps us share more worship songs, keep the app running smoothly, and continue our work — Glory to God.\n\nඔබගේ සහයෝගය අපට තවත් නමස්කාර ගීතිකා බෙදා ගැනීමට, යෙදුම සුමටව ක්‍රියාත්මක කර තබා ගැනීමට සහ අපගේ කාර්යය දිගටම කරගෙන යාමට උපකාරී වේ - දෙවියන් වහන්සේට මහිමය. \n\nஉங்கள் ஆதரவு எங்களுக்கு இன்னும் அதிகமான ஆராதனை பாடல்களைப் பகிரவும் , செயலிகளை  சீராக இயக்க வைக்கவும், எங்கள் பணியைத் தொடரவும்  உதவுகிறது - தேவனுக்கே மகி',
-                            ),
-                          ],
-                        ),
-
-                        SizedBox(height: 40),
-
-                        // Upgrade Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              // Handle upgrade action
-                              _showUpgradeDialog(context);
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xFFB71C1C),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(28),
-                              ),
-                            ),
-                            child: Text(
-                              'Upgrade Premium \$2.99',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

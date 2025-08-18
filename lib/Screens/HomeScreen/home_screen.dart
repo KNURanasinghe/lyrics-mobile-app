@@ -544,125 +544,131 @@ class _HomePageState extends State<HomePage> {
 
     return Column(
       children: [
-        CarouselSlider.builder(
-          carouselController: _carouselController,
-          itemCount: latestAlbums.length,
-          options: CarouselOptions(
-            height: 160,
-            viewportFraction: 0.9,
-            enlargeCenterPage: true,
-            autoPlay: true,
-            autoPlayInterval: const Duration(seconds: 5),
-            onPageChanged: (index, reason) {
-              setState(() {
-                _currentCarouselIndex = index;
-              });
-            },
-          ),
-          itemBuilder: (context, index, realIndex) {
-            final album = latestAlbums[index];
-            return GestureDetector(
-              onTap: () {
-                _navigateToAlbumSongs(album);
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 5.0),
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: Const.heroBackgrounf,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        right: -5,
-                        top: -20,
-                        bottom: 0,
-                        child: ClipRRect(
-                          borderRadius: const BorderRadius.only(
-                            topRight: Radius.circular(16),
-                            bottomRight: Radius.circular(16),
-                          ),
-                          child: SizedBox(
-                            width: 180,
-                            height: 160,
-                            child:
-                                album.image != null
-                                    ? Image.network(
-                                      album.image!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (
-                                        context,
-                                        error,
-                                        stackTrace,
-                                      ) {
-                                        return Image.asset(
+        // Add padding to give space for the overflowing image
+        Padding(
+          padding: const EdgeInsets.only(
+            top: 0.0,
+          ), // More space for image overflow
+          child: SizedBox(
+            height: 200, // Increase total height to accommodate overflow
+            child: CarouselSlider.builder(
+              carouselController: _carouselController,
+              itemCount: latestAlbums.length,
+              options: CarouselOptions(
+                height: 160,
+                viewportFraction: 0.9,
+                enlargeCenterPage: true,
+                autoPlay: true,
+                autoPlayInterval: const Duration(seconds: 5),
+                onPageChanged: (index, reason) {
+                  setState(() {
+                    _currentCarouselIndex = index;
+                  });
+                },
+              ),
+              itemBuilder: (context, index, realIndex) {
+                final album = latestAlbums[index];
+                return GestureDetector(
+                  onTap: () {
+                    _navigateToAlbumSongs(album);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 5.0),
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        gradient: Const.heroBackgrounf,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none, // Allow overflow
+                        children: [
+                          // Artist Image - positioned to extend out from top
+                          Positioned(
+                            right: 15,
+                            top:
+                                -40, // More negative value to extend further out
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: SizedBox(
+                                width: 120,
+                                height: 200, // Taller image
+                                child:
+                                    album.artistImage != null
+                                        ? Image.network(
+                                          album.artistImage!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (
+                                            context,
+                                            error,
+                                            stackTrace,
+                                          ) {
+                                            return Image.asset(
+                                              'assets/hero.png',
+                                              fit: BoxFit.cover,
+                                            );
+                                          },
+                                        )
+                                        : Image.asset(
                                           'assets/hero.png',
                                           fit: BoxFit.cover,
-                                        );
-                                      },
-                                    )
-                                    : Image.asset(
-                                      'assets/hero.png',
-                                      fit: BoxFit.cover,
+                                        ),
+                              ),
+                            ),
+                          ),
+                          // Text Content
+                          Positioned(
+                            left: 20,
+                            top: 20,
+                            bottom: 20,
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text(
+                                    'New Album Released',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
                                     ),
-                          ),
-                        ),
-                      ),
-                      // Text Content
-                      Positioned(
-                        left: 20,
-                        top: 20,
-                        bottom: 20,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text(
-                                'New Album Released',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: MediaQuery.of(context).size.width * 0.5,
-                                child: Text(
-                                  album.name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
                                   ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width:
+                                        MediaQuery.of(context).size.width * 0.5,
+                                    child: Text(
+                                      album.name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    album.artistName ?? 'Unknown Artist',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                album.artistName ?? 'Unknown Artist',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-
-                      // Hero Image
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            );
-          },
+                );
+              },
+            ),
+          ),
         ),
         const SizedBox(height: 10),
         Row(
@@ -1188,7 +1194,7 @@ class _HomePageState extends State<HomePage> {
                 Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
                         'A Vision by Johnson Shan',
@@ -1201,7 +1207,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       Text(
                         'www.rockofpraise.org',
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: Colors.lightBlue),
                       ),
                       Text(
                         '© 2025 The Rock of Praise. All rights reserved.',
@@ -1210,6 +1216,7 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
+                SizedBox(height: 20),
               ],
             ),
           ),
