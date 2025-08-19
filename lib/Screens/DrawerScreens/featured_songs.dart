@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:lyrics/Service/favorites_service.dart';
+import 'package:lyrics/OfflineService/offline_song_service.dart';
+import 'package:lyrics/OfflineService/offline_favorites_service.dart';
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
+import 'package:lyrics/Service/song_service.dart';
 import 'package:lyrics/Service/user_service.dart';
+import 'package:lyrics/Models/song_model.dart';
 import 'package:lyrics/Screens/music_player.dart';
-import 'package:lyrics/widgets/main_background.dart'; // Adjust import path
+import 'package:lyrics/widgets/main_background.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
 
 class FeaturedSongs extends StatefulWidget {
   const FeaturedSongs({super.key});
@@ -12,11 +18,21 @@ class FeaturedSongs extends StatefulWidget {
 }
 
 class _FeaturedSongsState extends State<FeaturedSongs> {
-  List<FavoriteSong> favoriteSongs = [];
+  // Replace online services with offline services
+  final OfflineSongService _songService = OfflineSongService();
+  final OfflineFavoritesService _favoritesService = OfflineFavoritesService();
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
+
+  List<SongModel> featuredSongs = [];
   FavoriteStats? stats;
   bool isLoading = true;
   bool isLoadingMore = false;
   String? currentUserId;
+
+  // Connectivity state
+  bool _isOnline = false;
+  String? _dataSource;
+  StreamSubscription<ConnectivityResult>? _connectivitySubscription;
 
   final ScrollController _scrollController = ScrollController();
   final int _pageSize = 20;
@@ -26,6 +42,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
   @override
   void initState() {
     super.initState();
+    _initializeConnectivity();
     _initializeFavorites();
     _scrollController.addListener(_scrollListener);
   }
@@ -33,7 +50,57 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _connectivitySubscription?.cancel();
+    _songService.dispose();
     super.dispose();
+  }
+
+  Future<void> _initializeConnectivity() async {
+    // Check initial connectivity
+    _isOnline = await _connectivityManager.isConnected();
+
+    // Listen to connectivity changes
+    _connectivitySubscription = _connectivityManager.connectivityStream.listen((
+      result,
+    ) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Sync when coming back online
+        if (_isOnline && wasOffline) {
+          _syncDataWhenOnline();
+        }
+      }
+    });
+  }
+
+  Future<void> _syncDataWhenOnline() async {
+    try {
+      // Sync favorites
+      await _favoritesService.syncPendingChanges();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Data synchronized'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      print('Background sync failed: $e');
+    }
   }
 
   void _scrollListener() {
@@ -68,7 +135,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
       setState(() {
         _currentOffset = 0;
         _hasMore = true;
-        favoriteSongs.clear();
+        featuredSongs.clear();
       });
     }
 
@@ -81,28 +148,48 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
     });
 
     try {
-      final result = await FavoritesService.getFavorites(
+      // Use offline favorites service instead of online service
+      final result = await _favoritesService.getFavorites(
         currentUserId!,
         limit: _pageSize,
         offset: _currentOffset,
       );
 
       if (result['success'] == true) {
-        final List<FavoriteSong> newFavorites =
-            (result['favorites'] as List)
-                .map((favoriteJson) => FavoriteSong.fromJson(favoriteJson))
-                .toList();
+        final favoritesList = result['favorites'] as List;
+        final List<SongModel> newFavorites = [];
+
+        // Convert favorite data to SongModel
+        for (final favoriteData in favoritesList) {
+          print('song models, $favoriteData');
+          try {
+            final songModel = SongModel(
+              artistId: favoriteData['song_id'],
+              id: favoriteData['id'],
+              songname: favoriteData['song_name'],
+              artistName: favoriteData['artist_name'],
+              image: favoriteData['song_image'],
+              // Add other fields as needed
+            );
+            newFavorites.add(songModel);
+          } catch (e) {
+            print('Error converting favorite to song model: $e');
+          }
+        }
 
         setState(() {
           if (isRefresh) {
-            favoriteSongs = newFavorites;
+            featuredSongs = newFavorites;
           } else {
-            favoriteSongs.addAll(newFavorites);
+            featuredSongs.addAll(newFavorites);
           }
 
           _currentOffset += _pageSize;
           _hasMore = newFavorites.length == _pageSize;
+          _dataSource = result['source'];
         });
+
+        _showDataSourceIndicator(_dataSource ?? 'unknown');
       } else {
         _showErrorSnackBar(result['message'] ?? 'Failed to load favorites');
       }
@@ -124,10 +211,29 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
     if (currentUserId == null) return;
 
     try {
-      final result = await FavoritesService.getFavoriteStats(currentUserId!);
+      // Use offline favorites service for stats
+      final result = await _favoritesService.getFavoriteStats(currentUserId!);
       if (result['success'] == true) {
         setState(() {
-          stats = FavoriteStats.fromJson(result);
+          // Convert stats data
+          final statsData = result['stats'];
+          stats = FavoriteStats(
+            totalFavorites: statsData['total_favorites'] ?? 0,
+            favoriteArtists: statsData['favorite_artists'] ?? 0,
+            lastAdded:
+                statsData['last_added'] != null
+                    ? DateTime.parse(statsData['last_added'])
+                    : null,
+            topArtists:
+                (statsData['topArtists'] as List? ?? [])
+                    .map(
+                      (artist) => TopArtist(
+                        artistName: artist['artist_name'] ?? '',
+                        count: artist['count'] ?? 0,
+                      ),
+                    )
+                    .toList(),
+          );
         });
       }
     } catch (e) {
@@ -135,7 +241,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
     }
   }
 
-  Future<void> _removeFavorite(FavoriteSong song) async {
+  Future<void> _removeFavorite(SongModel song) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -146,7 +252,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
             style: TextStyle(color: Colors.white),
           ),
           content: Text(
-            'Remove "${song.songName}" from favorites?',
+            'Remove "${song.songname}" from favorites?',
             style: const TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -172,16 +278,23 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
 
     if (confirm == true && currentUserId != null) {
       try {
-        final result = await FavoritesService.removeFromFavorites(
+        // Use offline favorites service
+        final result = await _favoritesService.removeFromFavorites(
           userId: currentUserId!,
-          songId: song.songId,
+          songId: song.id!,
         );
 
         if (result['success'] == true) {
           setState(() {
-            favoriteSongs.removeWhere((fav) => fav.id == song.id);
+            featuredSongs.removeWhere((fav) => fav.id == song.id);
           });
-          _showSuccessSnackBar('Removed from favorites');
+
+          String message = 'Removed from favorites';
+          if (result['source'] == 'local' || result['pending_sync'] == true) {
+            message += ' (will sync when online)';
+          }
+          _showSuccessSnackBar(message);
+
           await _loadStats(); // Refresh stats
         } else {
           _showErrorSnackBar(result['message'] ?? 'Failed to remove favorite');
@@ -192,22 +305,51 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
     }
   }
 
-  void _navigateToMusicPlayer(FavoriteSong song) {
+  void _navigateToMusicPlayer(SongModel song) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder:
             (context) => MusicPlayer(
-              id: song.id,
-              backgroundImage: song.songImage ?? 'assets/Rectangle 29.png',
-              song: song.songName,
-              artist: song.artistName,
-              lyrics: song.getLyrics(
-                'en',
-              ), // Default to English, you can make this configurable
-              language:
-                  'en', // You might want to store preferred language in user settings
+              id: song.id ?? 0,
+              backgroundImage: song.image ?? 'assets/Rectangle 29.png',
+              song: song.songname ?? '',
+              artist: song.artistName ?? '',
+              lyrics: song.lyricsEn,
+              language: 'en',
             ),
+      ),
+    );
+  }
+
+  void _showDataSourceIndicator(String source) {
+    if (!mounted) return;
+
+    String message;
+    Color color;
+
+    switch (source) {
+      case 'online':
+        message = '🌐 Live data';
+        color = Colors.green;
+        break;
+      case 'cache':
+        message = '📱 Cached data';
+        color = Colors.orange;
+        break;
+      case 'local':
+        message = '💾 Local data';
+        color = Colors.blue;
+        break;
+      default:
+        return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: 1),
+        backgroundColor: color,
       ),
     );
   }
@@ -254,6 +396,13 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
+              ),
+              const Spacer(),
+              // Add connectivity indicator
+              Icon(
+                _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: _isOnline ? Colors.green : Colors.orange,
+                size: 16,
               ),
             ],
           ),
@@ -338,7 +487,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
     );
   }
 
-  Widget _buildSongCard(FavoriteSong song) {
+  Widget _buildSongCard(SongModel song) {
     return Card(
       color: Colors.transparent,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -358,17 +507,17 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child:
-                      song.songImage != null && song.songImage!.isNotEmpty
-                          ? (song.songImage!.startsWith('http')
+                      song.image != null && song.image!.isNotEmpty
+                          ? (song.image!.startsWith('http')
                               ? Image.network(
-                                song.songImage!,
+                                song.image!,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) {
                                   return _buildDefaultImage();
                                 },
                               )
                               : Image.asset(
-                                song.songImage!,
+                                song.image!,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) {
                                   return _buildDefaultImage();
@@ -384,7 +533,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      song.songName,
+                      song.songname ?? '',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -395,7 +544,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      song.artistName,
+                      song.artistName ?? '',
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
@@ -414,7 +563,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            song.formattedDuration,
+                            _formatDuration(song.duration!),
                             style: const TextStyle(
                               color: Colors.white54,
                               fontSize: 12,
@@ -425,12 +574,16 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                         Icon(Icons.favorite, color: Colors.red, size: 14),
                         const SizedBox(width: 4),
                         Text(
-                          'Added ${_getRelativeTime(song.createdAt)}',
+                          'Added ${_getRelativeTime((song.createdAt != null ? song.createdAt!.toIso8601String() : DateTime.now().toIso8601String()))}',
                           style: const TextStyle(
                             color: Colors.white54,
                             fontSize: 12,
                           ),
                         ),
+                        const Spacer(),
+                        // Offline indicator
+                        if (!_isOnline)
+                          Icon(Icons.cloud_off, color: Colors.orange, size: 14),
                       ],
                     ),
                   ],
@@ -496,18 +649,29 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
     );
   }
 
-  String _getRelativeTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
+  String _formatDuration(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
 
-    if (difference.inDays > 0) {
-      return '${difference.inDays} days ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours} hours ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes} minutes ago';
-    } else {
-      return 'Just now';
+  String _getRelativeTime(String dateTimeString) {
+    try {
+      final dateTime = DateTime.parse(dateTimeString);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays > 0) {
+        return '${difference.inDays} days ago';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours} hours ago';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes} minutes ago';
+      } else {
+        return 'Just now';
+      }
+    } catch (e) {
+      return 'Recently';
     }
   }
 
@@ -517,9 +681,25 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
       backgroundColor: const Color(0xFF1A1A1A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF173857),
-        title: const Text(
-          'Featured Songs',
-          style: TextStyle(color: Colors.white),
+        title: Row(
+          children: [
+            const Text('Featured Songs', style: TextStyle(color: Colors.white)),
+            const Spacer(),
+            // Connection status indicator
+            Icon(
+              _isOnline ? Icons.cloud_done : Icons.cloud_off,
+              color: _isOnline ? Colors.green : Colors.orange,
+              size: 20,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _isOnline ? 'Online' : 'Offline',
+              style: TextStyle(
+                fontSize: 12,
+                color: _isOnline ? Colors.green : Colors.orange,
+              ),
+            ),
+          ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -537,7 +717,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                 )
                 : currentUserId == null
                 ? _buildLoginPrompt()
-                : favoriteSongs.isEmpty
+                : featuredSongs.isEmpty
                 ? _buildEmptyState()
                 : RefreshIndicator(
                   color: Colors.white,
@@ -554,8 +734,8 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                            if (index < favoriteSongs.length) {
-                              return _buildSongCard(favoriteSongs[index]);
+                            if (index < featuredSongs.length) {
+                              return _buildSongCard(featuredSongs[index]);
                             } else if (isLoadingMore) {
                               return const Padding(
                                 padding: EdgeInsets.all(16.0),
@@ -565,7 +745,7 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                                   ),
                                 ),
                               );
-                            } else if (!_hasMore && favoriteSongs.isNotEmpty) {
+                            } else if (!_hasMore && featuredSongs.isNotEmpty) {
                               return Container(
                                 padding: const EdgeInsets.all(16),
                                 child: const Center(
@@ -582,9 +762,9 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
                             return const SizedBox.shrink();
                           },
                           childCount:
-                              favoriteSongs.length +
+                              featuredSongs.length +
                               (isLoadingMore ? 1 : 0) +
-                              (!_hasMore && favoriteSongs.isNotEmpty ? 1 : 0),
+                              (!_hasMore && featuredSongs.isNotEmpty ? 1 : 0),
                         ),
                       ),
                     ],
@@ -639,20 +819,26 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.favorite_border, size: 80, color: Colors.white54),
+          Icon(
+            _isOnline ? Icons.favorite_border : Icons.cloud_off,
+            size: 80,
+            color: Colors.white54,
+          ),
           const SizedBox(height: 16),
-          const Text(
-            'No Favorite Songs Yet',
-            style: TextStyle(
+          Text(
+            _isOnline ? 'No Favorite Songs Yet' : 'Offline Mode',
+            style: const TextStyle(
               color: Colors.white70,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Start adding songs to your favorites\nby tapping the heart icon while listening',
-            style: TextStyle(color: Colors.white54, fontSize: 16),
+          Text(
+            _isOnline
+                ? 'Start adding songs to your favorites\nby tapping the heart icon while listening'
+                : 'Your favorites will appear when you\'re back online\nor when cached data is available',
+            style: const TextStyle(color: Colors.white54, fontSize: 16),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
@@ -661,8 +847,8 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
               // Navigate back or to song browser
               Navigator.pop(context);
             },
-            icon: const Icon(Icons.explore),
-            label: const Text('Explore Songs'),
+            icon: Icon(_isOnline ? Icons.explore : Icons.refresh),
+            label: Text(_isOnline ? 'Explore Songs' : 'Retry'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,
@@ -673,4 +859,26 @@ class _FeaturedSongsState extends State<FeaturedSongs> {
       ),
     );
   }
+}
+
+// Add these models if they don't exist in your project
+class FavoriteStats {
+  final int totalFavorites;
+  final int favoriteArtists;
+  final DateTime? lastAdded;
+  final List<TopArtist> topArtists;
+
+  FavoriteStats({
+    required this.totalFavorites,
+    required this.favoriteArtists,
+    this.lastAdded,
+    required this.topArtists,
+  });
+}
+
+class TopArtist {
+  final String artistName;
+  final int count;
+
+  TopArtist({required this.artistName, required this.count});
 }

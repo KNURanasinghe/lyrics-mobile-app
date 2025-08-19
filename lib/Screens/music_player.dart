@@ -648,7 +648,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
                           isBoldText ? FontWeight.bold : FontWeight.w400,
                       letterSpacing: 0.2,
                     ),
-                    textAlign: TextAlign.left,
+                    textAlign: TextAlign.justify,
                   ),
                 ],
               );
@@ -698,7 +698,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
           fontWeight: isBoldText ? FontWeight.bold : FontWeight.w400,
           letterSpacing: 0.2,
         ),
-        textAlign: TextAlign.left,
+        textAlign: TextAlign.center,
       );
     }
   }

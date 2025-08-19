@@ -14,6 +14,8 @@ import 'package:lyrics/Service/song_service.dart';
 import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/Service/worship_note_service.dart';
 import 'package:sqflite/sqflite.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class OfflineUserService {
   final UserService _onlineService;
@@ -584,6 +586,8 @@ class OfflineWorshipNotesService {
           note: note,
         );
         if (result['success']) {
+          // Update cache with new data
+          await _updateWorshipNoteInCache(noteId, note);
           return result;
         }
       } catch (e) {
@@ -611,6 +615,39 @@ class OfflineWorshipNotesService {
     }
 
     return await _markWorshipNoteForDeletion(noteId);
+  }
+
+  // Sync pending changes when back online
+  Future<void> syncPendingChanges() async {
+    final isConnected = await _connectivityManager.isConnected();
+    if (!isConnected) return;
+
+    final db = await _dbHelper.database;
+
+    try {
+      // Sync note deletions first
+      await _syncPendingNoteDeletions(db);
+      // Sync note creations
+      await _syncPendingNoteCreations(db);
+      // Sync note updates
+      await _syncPendingNoteUpdates(db);
+    } catch (e) {
+      print('❌ Error syncing pending worship note changes: $e');
+    }
+  }
+
+  // Get pending sync count
+  Future<int> getPendingSyncCount() async {
+    try {
+      final db = await _dbHelper.database;
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM worship_notes WHERE synced = 0 OR synced = -1',
+      );
+      return result.first['count'] as int;
+    } catch (e) {
+      print('❌ Error getting pending sync count: $e');
+      return 0;
+    }
   }
 
   // Private methods for caching and local operations
@@ -643,22 +680,32 @@ class OfflineWorshipNotesService {
     final tempId = -(DateTime.now().millisecondsSinceEpoch);
     final now = DateTime.now().toIso8601String();
 
-    await db.insert('worship_notes', {
-      'id': tempId,
-      'user_id': int.parse(userId),
-      'note': note,
-      'created_at': now,
-      'updated_at': now,
-      'synced': 0,
-    });
+    try {
+      await db.insert('worship_notes', {
+        'id': tempId,
+        'user_id': int.parse(userId),
+        'note': note,
+        'created_at': now,
+        'updated_at': now,
+        'synced': 0,
+      });
 
-    return {
-      'success': true,
-      'note_id': tempId,
-      'message': '💾 Worship note saved locally, will sync when online',
-      'source': 'local',
-      'pending_sync': true,
-    };
+      return {
+        'success': true,
+        'note': {
+          'id': tempId,
+          'user_id': int.parse(userId),
+          'note': note,
+          'created_at': now,
+          'updated_at': now,
+        },
+        'message': '💾 Worship note saved locally, will sync when online',
+        'source': 'local',
+        'pending_sync': true,
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to create note locally: $e'};
+    }
   }
 
   Future<Map<String, dynamic>> _getCachedWorshipNotes() async {
@@ -738,6 +785,20 @@ class OfflineWorshipNotesService {
     }
   }
 
+  Future<void> _updateWorshipNoteInCache(String noteId, String note) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'worship_notes',
+      {
+        'note': note,
+        'updated_at': DateTime.now().toIso8601String(),
+        'synced': 1,
+      },
+      where: 'id = ?',
+      whereArgs: [int.parse(noteId)],
+    );
+  }
+
   Future<Map<String, dynamic>> _markWorshipNoteForDeletion(
     String noteId,
   ) async {
@@ -774,9 +835,295 @@ class OfflineWorshipNotesService {
       whereArgs: [int.parse(noteId)],
     );
   }
+
+  // Sync methods
+  Future<void> _syncPendingNoteDeletions(Database db) async {
+    try {
+      final deletionMaps = await db.query(
+        'worship_notes',
+        where: 'synced = ?',
+        whereArgs: [-1],
+      );
+
+      for (final noteData in deletionMaps) {
+        final noteId = noteData['id'] as int;
+
+        try {
+          if (noteId > 0) {
+            // Server record - try to delete from server
+            final result = await _onlineService.deleteWorshipNote(
+              noteId.toString(),
+            );
+
+            if (result['success']) {
+              await db.delete(
+                'worship_notes',
+                where: 'id = ?',
+                whereArgs: [noteId],
+              );
+              print('✅ Synced worship note deletion: $noteId');
+            }
+          } else {
+            // Local-only record, just delete it
+            await db.delete(
+              'worship_notes',
+              where: 'id = ?',
+              whereArgs: [noteId],
+            );
+          }
+        } catch (e) {
+          print('❌ Failed to sync worship note deletion $noteId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending note deletions: $e');
+    }
+  }
+
+  Future<void> _syncPendingNoteCreations(Database db) async {
+    try {
+      final unsyncedMaps = await db.query(
+        'worship_notes',
+        where: 'synced = ?',
+        whereArgs: [0],
+      );
+
+      for (final noteData in unsyncedMaps) {
+        final noteId = noteData['id'] as int;
+
+        try {
+          if (noteId < 0) {
+            // This is a locally created note
+            final result = await _onlineService.createWorshipNote(
+              noteData['note'] as String,
+            );
+
+            if (result['success']) {
+              // Update local record with server data and mark as synced
+              final serverNote = result['note'];
+              await db.update(
+                'worship_notes',
+                {
+                  'id': serverNote['id'],
+                  'synced': 1,
+                  'created_at': serverNote['created_at'],
+                  'updated_at': serverNote['updated_at'],
+                },
+                where: 'id = ?',
+                whereArgs: [noteId],
+              );
+
+              print(
+                '✅ Synced local worship note creation: ${noteData['note']}',
+              );
+            }
+          }
+        } catch (e) {
+          print('❌ Failed to sync worship note $noteId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending note creations: $e');
+    }
+  }
+
+  Future<void> _syncPendingNoteUpdates(Database db) async {
+    try {
+      final unsyncedMaps = await db.query(
+        'worship_notes',
+        where: 'synced = 0 AND id > 0', // Only sync updates for server records
+        whereArgs: [],
+      );
+
+      for (final noteData in unsyncedMaps) {
+        final noteId = noteData['id'] as int;
+
+        try {
+          final result = await _onlineService.updateWorshipNote(
+            noteId: noteId.toString(),
+            note: noteData['note'] as String,
+          );
+
+          if (result['success']) {
+            // Mark as synced
+            await db.update(
+              'worship_notes',
+              {'synced': 1, 'updated_at': DateTime.now().toIso8601String()},
+              where: 'id = ?',
+              whereArgs: [noteId],
+            );
+            print('✅ Synced worship note update: $noteId');
+          }
+        } catch (e) {
+          print('❌ Failed to sync worship note update $noteId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending note updates: $e');
+    }
+  }
+
+  void dispose() {
+    // Cleanup if needed
+  }
 }
 
 // Offline Setlist Service
+
+class SetListService {
+  static const String baseUrl = 'http://145.223.21.62:3100';
+
+  static Map<String, dynamic> _handleResponse(http.Response response) {
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load data: ${response.statusCode}');
+    }
+  }
+
+  // Get all folders for a user
+  static Future<Map<String, dynamic>> getFolders(String userId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/setlist/folders/$userId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      final result = _handleResponse(response);
+
+      // Normalize the response structure
+      return {
+        'success': true,
+        'data': result['folders'] ?? result['data'] ?? [],
+        'message': result['message'] ?? 'Folders loaded successfully',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch folders: $e'};
+    }
+  }
+
+  // Create new folder
+  static Future<Map<String, dynamic>> createFolder(
+    String userId,
+    String folderName, {
+    String? description,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/setlist/folders'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'userId': userId,
+          'folderName': folderName,
+          'description': description,
+        }),
+      );
+      final result = _handleResponse(response);
+
+      // Normalize the response structure
+      return {
+        'success': result['success'] ?? true,
+        'folder_id': result['folder_id'] ?? result['folderId'] ?? result['id'],
+        'message': result['message'] ?? 'Folder created successfully',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to create folder: $e'};
+    }
+  }
+
+  // Add song to folder
+  static Future<Map<String, dynamic>> addSongToFolder({
+    required int folderId,
+    required int songId,
+    required String songName,
+    required String artistName,
+    required String songImage,
+    required String lyricsFormat,
+    required String savedLyrics,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/setlist/songs'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'folderId': folderId,
+          'songId': songId,
+          'songName': songName,
+          'artistName': artistName,
+          'songImage': songImage,
+          'lyricsFormat': lyricsFormat,
+          'savedLyrics': savedLyrics,
+        }),
+      );
+      final result = _handleResponse(response);
+
+      return {
+        'success': result['success'] ?? true,
+        'setlist_song_id': result['setlist_song_id'] ?? result['id'],
+        'message': result['message'] ?? 'Song added successfully',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to add song: $e'};
+    }
+  }
+
+  // Get songs in a folder
+  static Future<Map<String, dynamic>> getFolderSongs(int folderId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/setlist/songs/$folderId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      final result = _handleResponse(response);
+
+      return {
+        'success': true,
+        'data': result['songs'] ?? result['data'] ?? [],
+        'message': result['message'] ?? 'Songs loaded successfully',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch songs: $e'};
+    }
+  }
+
+  // Remove song from setlist
+  static Future<Map<String, dynamic>> removeSongFromSetlist(
+    int setlistSongId,
+  ) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/api/setlist/songs/$setlistSongId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      final result = _handleResponse(response);
+
+      return {
+        'success': result['success'] ?? true,
+        'message': result['message'] ?? 'Song removed successfully',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to remove song: $e'};
+    }
+  }
+
+  // Delete folder
+  static Future<Map<String, dynamic>> deleteFolder(int folderId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/api/setlist/folders/$folderId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      final result = _handleResponse(response);
+
+      return {
+        'success': result['success'] ?? true,
+        'message': result['message'] ?? 'Folder deleted successfully',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to delete folder: $e'};
+    }
+  }
+}
+
 class OfflineSetlistService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final ConnectivityManager _connectivityManager = ConnectivityManager();
@@ -1148,230 +1495,7 @@ class OfflineSetlistService {
       whereArgs: [setlistSongId],
     );
   }
-// Sync pending changes when back online
-Future<void> syncPendingChanges() async {
-  final isConnected = await _connectivityManager.isConnected();
-  if (!isConnected) return;
 
-  final db = await _dbHelper.database;
-
-  try {
-    // Sync folder deletions first
-    await _syncPendingFolderDeletions(db);
-
-    // Sync song deletions
-    await _syncPendingSongDeletions(db);
-
-    // Sync folder creations
-    await _syncPendingFolderCreations(db);
-
-    // Sync song additions
-    await _syncPendingSongAdditions(db);
-  } catch (e) {
-    print('❌ Error syncing pending setlist changes: $e');
-  }
-}
-
-Future<void> _syncPendingFolderDeletions(Database db) async {
-  try {
-    final deletionMaps = await db.query(
-      'setlist_folders',
-      where: 'synced = ?',
-      whereArgs: [-1],
-    );
-
-    for (final folderData in deletionMaps) {
-      final folderId = folderData['id'] as int;
-      
-      try {
-        if (folderId > 0) {
-          // Server record - try to delete from server
-          final result = await SetListService.deleteFolder(folderId);
-          
-          if (result['success']) {
-            await db.delete(
-              'setlist_folders', 
-              where: 'id = ?', 
-              whereArgs: [folderId]
-            );
-            print('✅ Synced folder deletion: $folderId');
-          }
-        } else {
-          // Local-only record, just delete it
-          await db.delete(
-            'setlist_folders', 
-            where: 'id = ?', 
-            whereArgs: [folderId]
-          );
-        }
-      } catch (e) {
-        print('❌ Failed to sync folder deletion $folderId: $e');
-      }
-    }
-  } catch (e) {
-    print('❌ Error syncing pending folder deletions: $e');
-  }
-}
-
-Future<void> _syncPendingSongDeletions(Database db) async {
-  try {
-    final deletionMaps = await db.query(
-      'setlist_songs',
-      where: 'synced = ?',
-      whereArgs: [-1],
-    );
-
-    for (final songData in deletionMaps) {
-      final songId = songData['id'] as int;
-      
-      try {
-        if (songId > 0) {
-          // Server record - try to delete from server
-          final result = await SetListService.removeSongFromSetlist(songId);
-          
-          if (result['success']) {
-            await db.delete(
-              'setlist_songs', 
-              where: 'id = ?', 
-              whereArgs: [songId]
-            );
-            print('✅ Synced setlist song deletion: $songId');
-          }
-        } else {
-          // Local-only record, just delete it
-          await db.delete(
-            'setlist_songs', 
-            where: 'id = ?', 
-            whereArgs: [songId]
-          );
-        }
-      } catch (e) {
-        print('❌ Failed to sync setlist song deletion $songId: $e');
-      }
-    }
-  } catch (e) {
-    print('❌ Error syncing pending song deletions: $e');
-  }
-}
-
-Future<void> _syncPendingFolderCreations(Database db) async {
-  try {
-    final unsyncedMaps = await db.query(
-      'setlist_folders',
-      where: 'synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final folderData in unsyncedMaps) {
-      final folderId = folderData['id'] as int;
-      
-      try {
-        if (folderId < 0) {
-          // This is a locally created folder
-          final result = await SetListService.createFolder(
-            folderData['user_id'].toString(),
-            folderData['folder_name'] as String,
-            description: folderData['description'] as String?,
-          );
-          
-          if (result['success']) {
-            // Update local record with server ID and mark as synced
-            await db.update(
-              'setlist_folders',
-              {
-                'id': result['folder_id'],
-                'synced': 1,
-                'created_at': DateTime.now().toIso8601String(),
-                'updated_at': DateTime.now().toIso8601String(),
-              },
-              where: 'id = ?',
-              whereArgs: [folderId],
-            );
-            
-            // Update all songs in this folder with the new folder ID
-            await db.update(
-              'setlist_songs',
-              {'folder_id': result['folder_id']},
-              where: 'folder_id = ?',
-              whereArgs: [folderId],
-            );
-            
-            print('✅ Synced local folder creation: ${folderData['folder_name']}');
-          }
-        }
-      } catch (e) {
-        print('❌ Failed to sync folder $folderId: $e');
-      }
-    }
-  } catch (e) {
-    print('❌ Error syncing pending folder creations: $e');
-  }
-}
-
-Future<void> _syncPendingSongAdditions(Database db) async {
-  try {
-    final unsyncedMaps = await db.query(
-      'setlist_songs',
-      where: 'synced = ? AND folder_id > 0', // Only sync songs in synced folders
-      whereArgs: [0],
-    );
-
-    for (final songData in unsyncedMaps) {
-      final songId = songData['id'] as int;
-      
-      try {
-        if (songId < 0) {
-          // This is a locally created setlist song
-          final result = await SetListService.addSongToFolder(
-            folderId: songData['folder_id'] as int,
-            songId: songData['song_id'] as int,
-            songName: songData['song_name'] as String,
-            artistName: songData['artist_name'] as String,
-            songImage: songData['song_image'] as String,
-            lyricsFormat: songData['lyrics_format'] as String,
-            savedLyrics: songData['saved_lyrics'] as String,
-          );
-          
-          if (result['success']) {
-            // Mark as synced
-            await db.update(
-              'setlist_songs',
-              {
-                'id': result['setlist_song_id'],
-                'synced': 1,
-                'created_at': DateTime.now().toIso8601String(),
-              },
-              where: 'id = ?',
-              whereArgs: [songId],
-            );
-            print('✅ Synced local setlist song addition: ${songData['song_name']}');
-          }
-        }
-      } catch (e) {
-        print('❌ Failed to sync setlist song $songId: $e');
-      }
-    }
-  } catch (e) {
-    print('❌ Error syncing pending song additions: $e');
-  }
-}
-
-// Get pending sync count
-Future<int> getPendingSyncCount() async {
-  try {
-    final db = await _dbHelper.database;
-    final foldersResult = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM setlist_folders WHERE synced = 0 OR synced = -1'
-    );
-    final songsResult = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM setlist_songs WHERE synced = 0 OR synced = -1'
-    );
-    return (foldersResult.first['count'] as int) + (songsResult.first['count'] as int);
-  } catch (e) {
-    print('❌ Error getting pending sync count: $e');
-    return 0;
-  }
-}
   Future<void> _deleteFolderFromCache(int folderId) async {
     final db = await _dbHelper.database;
     await db.delete('setlist_folders', where: 'id = ?', whereArgs: [folderId]);
@@ -1380,6 +1504,228 @@ Future<int> getPendingSyncCount() async {
       where: 'folder_id = ?',
       whereArgs: [folderId],
     );
+  }
+
+  // Sync pending changes when back online
+  Future<void> syncPendingChanges() async {
+    final isConnected = await _connectivityManager.isConnected();
+    if (!isConnected) return;
+
+    final db = await _dbHelper.database;
+
+    try {
+      // Sync folder deletions first
+      await _syncPendingFolderDeletions(db);
+      // Sync song deletions
+      await _syncPendingSongDeletions(db);
+      // Sync folder creations
+      await _syncPendingFolderCreations(db);
+      // Sync song additions
+      await _syncPendingSongAdditions(db);
+    } catch (e) {
+      print('❌ Error syncing pending setlist changes: $e');
+    }
+  }
+
+  Future<void> _syncPendingFolderDeletions(Database db) async {
+    try {
+      final deletionMaps = await db.query(
+        'setlist_folders',
+        where: 'synced = ?',
+        whereArgs: [-1],
+      );
+
+      for (final folderData in deletionMaps) {
+        final folderId = folderData['id'] as int;
+
+        try {
+          if (folderId > 0) {
+            final result = await SetListService.deleteFolder(folderId);
+
+            if (result['success']) {
+              await db.delete(
+                'setlist_folders',
+                where: 'id = ?',
+                whereArgs: [folderId],
+              );
+              print('✅ Synced folder deletion: $folderId');
+            }
+          } else {
+            await db.delete(
+              'setlist_folders',
+              where: 'id = ?',
+              whereArgs: [folderId],
+            );
+          }
+        } catch (e) {
+          print('❌ Failed to sync folder deletion $folderId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending folder deletions: $e');
+    }
+  }
+
+  Future<void> _syncPendingSongDeletions(Database db) async {
+    try {
+      final deletionMaps = await db.query(
+        'setlist_songs',
+        where: 'synced = ?',
+        whereArgs: [-1],
+      );
+
+      for (final songData in deletionMaps) {
+        final songId = songData['id'] as int;
+
+        try {
+          if (songId > 0) {
+            final result = await SetListService.removeSongFromSetlist(songId);
+
+            if (result['success']) {
+              await db.delete(
+                'setlist_songs',
+                where: 'id = ?',
+                whereArgs: [songId],
+              );
+              print('✅ Synced setlist song deletion: $songId');
+            }
+          } else {
+            await db.delete(
+              'setlist_songs',
+              where: 'id = ?',
+              whereArgs: [songId],
+            );
+          }
+        } catch (e) {
+          print('❌ Failed to sync setlist song deletion $songId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending song deletions: $e');
+    }
+  }
+
+  Future<void> _syncPendingFolderCreations(Database db) async {
+    try {
+      final unsyncedMaps = await db.query(
+        'setlist_folders',
+        where: 'synced = ?',
+        whereArgs: [0],
+      );
+
+      for (final folderData in unsyncedMaps) {
+        final folderId = folderData['id'] as int;
+
+        try {
+          if (folderId < 0) {
+            final result = await SetListService.createFolder(
+              folderData['user_id'].toString(),
+              folderData['folder_name'] as String,
+              description: folderData['description'] as String?,
+            );
+
+            if (result['success']) {
+              await db.update(
+                'setlist_folders',
+                {
+                  'id': result['folder_id'],
+                  'synced': 1,
+                  'created_at': DateTime.now().toIso8601String(),
+                  'updated_at': DateTime.now().toIso8601String(),
+                },
+                where: 'id = ?',
+                whereArgs: [folderId],
+              );
+
+              await db.update(
+                'setlist_songs',
+                {'folder_id': result['folder_id']},
+                where: 'folder_id = ?',
+                whereArgs: [folderId],
+              );
+
+              print(
+                '✅ Synced local folder creation: ${folderData['folder_name']}',
+              );
+            }
+          }
+        } catch (e) {
+          print('❌ Failed to sync folder $folderId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending folder creations: $e');
+    }
+  }
+
+  Future<void> _syncPendingSongAdditions(Database db) async {
+    try {
+      final unsyncedMaps = await db.query(
+        'setlist_songs',
+        where: 'synced = ? AND folder_id > 0',
+        whereArgs: [0],
+      );
+
+      for (final songData in unsyncedMaps) {
+        final songId = songData['id'] as int;
+
+        try {
+          if (songId < 0) {
+            final result = await SetListService.addSongToFolder(
+              folderId: songData['folder_id'] as int,
+              songId: songData['song_id'] as int,
+              songName: songData['song_name'] as String,
+              artistName: songData['artist_name'] as String,
+              songImage: songData['song_image'] as String,
+              lyricsFormat: songData['lyrics_format'] as String,
+              savedLyrics: songData['saved_lyrics'] as String,
+            );
+
+            if (result['success']) {
+              await db.update(
+                'setlist_songs',
+                {
+                  'id': result['setlist_song_id'],
+                  'synced': 1,
+                  'created_at': DateTime.now().toIso8601String(),
+                },
+                where: 'id = ?',
+                whereArgs: [songId],
+              );
+              print(
+                '✅ Synced local setlist song addition: ${songData['song_name']}',
+              );
+            }
+          }
+        } catch (e) {
+          print('❌ Failed to sync setlist song $songId: $e');
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending song additions: $e');
+    }
+  }
+
+  // Get pending sync count
+  Future<int> getPendingSyncCount() async {
+    try {
+      final db = await _dbHelper.database;
+      final foldersResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM setlist_folders WHERE synced = 0 OR synced = -1',
+      );
+      final songsResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM setlist_songs WHERE synced = 0 OR synced = -1',
+      );
+      return (foldersResult.first['count'] as int) +
+          (songsResult.first['count'] as int);
+    } catch (e) {
+      print('❌ Error getting pending sync count: $e');
+      return 0;
+    }
+  }
+
+  void dispose() {
+    // Cleanup if needed
   }
 }
 

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/OfflineService/offline_user_service.dart';
 import 'package:lyrics/Screens/music_player.dart';
-import 'package:lyrics/Service/setlist_service.dart';
 import 'package:lyrics/Service/user_service.dart';
+import 'package:lyrics/Service/setlist_service.dart';
 import 'package:lyrics/widgets/main_background.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+// Import offline services
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
 
 class MySetList extends StatefulWidget {
   const MySetList({super.key});
@@ -16,17 +21,70 @@ class _MySetListState extends State<MySetList> {
   bool isLoading = true;
   String? currentUserId;
 
+  // Offline support
+  final OfflineSetlistService _setlistService = OfflineSetlistService();
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
+  bool _isOnline = false;
+  String? _dataSource;
+
   @override
   void initState() {
     super.initState();
+    _initializeConnectivity();
     _initializeSetList();
+  }
+
+  Future<void> _initializeConnectivity() async {
+    // Check initial connectivity
+    _isOnline = await _connectivityManager.isConnected();
+
+    // Listen to connectivity changes
+    _connectivityManager.connectivityStream.listen((result) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Sync when coming back online
+        if (_isOnline && wasOffline) {
+          _syncDataWhenOnline();
+        }
+      }
+    });
+  }
+
+  Future<void> _syncDataWhenOnline() async {
+    try {
+      await _setlistService.syncPendingChanges();
+
+      // Reload folders to get updated data
+      await _loadFolders();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Set lists synchronized'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      print('Background sync failed: $e');
+    }
   }
 
   Future<void> _initializeSetList() async {
     try {
-      // Get current user ID (implement this based on your user service)
-      currentUserId =
-          await UserService.getUserID(); // You need to implement this
+      currentUserId = await UserService.getUserID();
       if (currentUserId != null) {
         await _loadFolders();
       }
@@ -47,14 +105,18 @@ class _MySetListState extends State<MySetList> {
     });
 
     try {
-      final result = await SetListService.getFolders(currentUserId!);
+      final result = await _setlistService.getFolders(currentUserId!);
       if (result['success'] == true) {
+        final foldersData = result['data'] as List<dynamic>? ?? [];
         setState(() {
           folders =
-              (result['folders'] as List)
+              foldersData
                   .map((folderJson) => SetListFolder.fromJson(folderJson))
                   .toList();
+          _dataSource = result['source'];
         });
+
+        _showDataSourceIndicator(_dataSource ?? 'unknown');
       } else {
         _showErrorSnackBar(result['message'] ?? 'Failed to load folders');
       }
@@ -67,6 +129,38 @@ class _MySetListState extends State<MySetList> {
     }
   }
 
+  void _showDataSourceIndicator(String source) {
+    if (!mounted) return;
+
+    String message;
+    Color color;
+
+    switch (source) {
+      case 'online':
+        message = '🌐 Live folders';
+        color = Colors.green;
+        break;
+      case 'cache':
+        message = '📱 Cached folders';
+        color = Colors.orange;
+        break;
+      case 'local':
+        message = '💾 Local folders';
+        color = Colors.blue;
+        break;
+      default:
+        return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: 1),
+        backgroundColor: color,
+      ),
+    );
+  }
+
   Future<void> _createNewFolder() async {
     final TextEditingController nameController = TextEditingController();
     final TextEditingController descriptionController = TextEditingController();
@@ -76,13 +170,50 @@ class _MySetListState extends State<MySetList> {
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF2A2A2A),
-          title: const Text(
-            'Create New Folder',
-            style: TextStyle(color: Colors.white),
+          title: Row(
+            children: [
+              const Text(
+                'Create New Folder',
+                style: TextStyle(color: Colors.white),
+              ),
+              const Spacer(),
+              // Connection indicator
+              Icon(
+                _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: _isOnline ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+            ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (!_isOnline)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.cloud_off,
+                        color: Colors.orange,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Creating offline - will sync when online',
+                          style: TextStyle(color: Colors.orange, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               TextField(
                 controller: nameController,
                 style: const TextStyle(color: Colors.white),
@@ -145,14 +276,21 @@ class _MySetListState extends State<MySetList> {
       final description = descriptionController.text.trim();
 
       try {
-        final createResult = await SetListService.createFolder(
+        final createResult = await _setlistService.createFolder(
           currentUserId!,
           folderName,
           description: description.isEmpty ? null : description,
         );
 
         if (createResult['success'] == true) {
-          _showSuccessSnackBar('Folder created successfully');
+          final isPending = createResult['pending_sync'] ?? false;
+          if (isPending) {
+            _showSuccessSnackBar(
+              'Folder created locally, will sync when online',
+            );
+          } else {
+            _showSuccessSnackBar('Folder created successfully');
+          }
           await _loadFolders(); // Refresh the list
         } else {
           _showErrorSnackBar(
@@ -171,13 +309,55 @@ class _MySetListState extends State<MySetList> {
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF2A2A2A),
-          title: const Text(
-            'Delete Folder',
-            style: TextStyle(color: Colors.white),
+          title: Row(
+            children: [
+              const Text(
+                'Delete Folder',
+                style: TextStyle(color: Colors.white),
+              ),
+              const Spacer(),
+              // Connection indicator
+              Icon(
+                _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: _isOnline ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+            ],
           ),
-          content: Text(
-            'Are you sure you want to delete "${folder.folderName}"?\nThis will remove all songs in this folder.',
-            style: const TextStyle(color: Colors.white70),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!_isOnline)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.cloud_off,
+                        color: Colors.orange,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Marking for deletion - will sync when online',
+                          style: TextStyle(color: Colors.orange, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Text(
+                'Are you sure you want to delete "${folder.folderName}"?\nThis will remove all songs in this folder.',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -202,9 +382,16 @@ class _MySetListState extends State<MySetList> {
 
     if (confirm == true) {
       try {
-        final result = await SetListService.deleteFolder(folder.id);
+        final result = await _setlistService.deleteFolder(folder.id);
         if (result['success'] == true) {
-          _showSuccessSnackBar('Folder deleted successfully');
+          final isPending = result['pending_sync'] ?? false;
+          if (isPending) {
+            _showSuccessSnackBar(
+              'Folder marked for deletion, will sync when online',
+            );
+          } else {
+            _showSuccessSnackBar('Folder deleted successfully');
+          }
           await _loadFolders();
         } else {
           _showErrorSnackBar(result['message'] ?? 'Failed to delete folder');
@@ -227,6 +414,19 @@ class _MySetListState extends State<MySetList> {
     );
   }
 
+  Color _getSourceColor(String source) {
+    switch (source) {
+      case 'online':
+        return Colors.green;
+      case 'cache':
+        return Colors.orange;
+      case 'local':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
   Widget _buildFolderCard(SetListFolder folder) {
     return Card(
       color: Colors.transparent,
@@ -237,7 +437,12 @@ class _MySetListState extends State<MySetList> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => FolderSongsScreen(folder: folder),
+              builder:
+                  (context) => FolderSongsScreen(
+                    folder: folder,
+                    setlistService: _setlistService,
+                    isOnline: _isOnline,
+                  ),
             ),
           );
         },
@@ -259,13 +464,25 @@ class _MySetListState extends State<MySetList> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      folder.folderName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            folder.folderName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        // Connection indicator for each folder
+                        Icon(
+                          _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                          color: _isOnline ? Colors.green : Colors.orange,
+                          size: 16,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     if (folder.description != null &&
@@ -291,6 +508,33 @@ class _MySetListState extends State<MySetList> {
                             fontSize: 12,
                           ),
                         ),
+                        if (_dataSource != null) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getSourceColor(
+                                _dataSource!,
+                              ).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _getSourceColor(_dataSource!),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              _dataSource!.toUpperCase(),
+                              style: TextStyle(
+                                color: _getSourceColor(_dataSource!),
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],
@@ -306,16 +550,28 @@ class _MySetListState extends State<MySetList> {
                 },
                 itemBuilder:
                     (BuildContext context) => [
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'delete',
                         child: Row(
                           children: [
-                            Icon(Icons.delete, color: Colors.red, size: 18),
-                            SizedBox(width: 8),
-                            Text(
+                            const Icon(
+                              Icons.delete,
+                              color: Colors.red,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
                               'Delete',
                               style: TextStyle(color: Colors.white),
                             ),
+                            if (!_isOnline) ...[
+                              const Spacer(),
+                              const Icon(
+                                Icons.cloud_off,
+                                color: Colors.orange,
+                                size: 14,
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -334,9 +590,39 @@ class _MySetListState extends State<MySetList> {
       backgroundColor: const Color(0xFF1A1A1A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF173857),
-        title: const Text(
-          'My Set Lists',
-          style: TextStyle(color: Colors.white),
+        title: Row(
+          children: [
+            const Text('My Set Lists', style: TextStyle(color: Colors.white)),
+            const Spacer(),
+            // Online/Offline indicator in app bar
+            Icon(
+              _isOnline ? Icons.cloud_done : Icons.cloud_off,
+              color: _isOnline ? Colors.green : Colors.orange,
+              size: 20,
+            ),
+            if (_dataSource != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getSourceColor(_dataSource!).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _getSourceColor(_dataSource!),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  _dataSource!.toUpperCase(),
+                  style: TextStyle(
+                    color: _getSourceColor(_dataSource!),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -366,7 +652,16 @@ class _MySetListState extends State<MySetList> {
       floatingActionButton: FloatingActionButton(
         onPressed: _createNewFolder,
         backgroundColor: Colors.blue,
-        child: const Icon(Icons.add, color: Colors.white),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.add, color: Colors.white, size: 20),
+            if (!_isOnline) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.cloud_off, color: Colors.orange, size: 16),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -376,44 +671,80 @@ class _MySetListState extends State<MySetList> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.folder_open, size: 80, color: Colors.white54),
+          Icon(
+            _isOnline ? Icons.folder_open : Icons.cloud_off,
+            size: 80,
+            color: Colors.white54,
+          ),
           const SizedBox(height: 16),
-          const Text(
-            'No Set Lists Yet',
-            style: TextStyle(
+          Text(
+            _isOnline ? 'No Set Lists Yet' : 'No Set Lists Available Offline',
+            style: const TextStyle(
               color: Colors.white70,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Create your first set list to\norganize your favorite songs',
-            style: TextStyle(color: Colors.white54, fontSize: 16),
+          Text(
+            _isOnline
+                ? 'Create your first set list to\norganize your favorite songs'
+                : 'Connect to internet to see your set lists\nor create new ones offline',
+            style: const TextStyle(color: Colors.white54, fontSize: 16),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: _createNewFolder,
-            icon: const Icon(Icons.add),
-            label: const Text('Create Set List'),
+            icon: Icon(_isOnline ? Icons.add : Icons.cloud_off),
+            label: Text(_isOnline ? 'Create Set List' : 'Create Offline'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
+              backgroundColor: _isOnline ? Colors.blue : Colors.orange,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
+          if (!_isOnline) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: const Text(
+                'Offline mode: Set lists created will sync when you\'re back online',
+                style: TextStyle(color: Colors.orange, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
+  @override
+  void dispose() {
+    _setlistService.dispose();
+    super.dispose();
+  }
 }
 
-// Separate screen for folder contents
+// Updated Folder Songs Screen with offline support
 class FolderSongsScreen extends StatefulWidget {
   final SetListFolder folder;
+  final OfflineSetlistService setlistService;
+  final bool isOnline;
 
-  const FolderSongsScreen({super.key, required this.folder});
+  const FolderSongsScreen({
+    super.key,
+    required this.folder,
+    required this.setlistService,
+    required this.isOnline,
+  });
 
   @override
   State<FolderSongsScreen> createState() => _FolderSongsScreenState();
@@ -422,11 +753,59 @@ class FolderSongsScreen extends StatefulWidget {
 class _FolderSongsScreenState extends State<FolderSongsScreen> {
   List<SetListSong> songs = [];
   bool isLoading = true;
+  String? _dataSource;
+  bool _isOnline = false;
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
 
   @override
   void initState() {
     super.initState();
+    _isOnline = widget.isOnline;
+    _initializeConnectivity();
     _loadSongs();
+  }
+
+  Future<void> _initializeConnectivity() async {
+    // Listen to connectivity changes
+    _connectivityManager.connectivityStream.listen((result) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Sync when coming back online
+        if (_isOnline && wasOffline) {
+          _syncDataWhenOnline();
+        }
+      }
+    });
+  }
+
+  Future<void> _syncDataWhenOnline() async {
+    try {
+      await widget.setlistService.syncPendingChanges();
+      await _loadSongs(); // Reload songs
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Songs synchronized'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      print('Background sync failed: $e');
+    }
   }
 
   Future<void> _loadSongs() async {
@@ -435,14 +814,20 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
     });
 
     try {
-      final result = await SetListService.getFolderSongs(widget.folder.id);
+      final result = await widget.setlistService.getFolderSongs(
+        widget.folder.id,
+      );
       if (result['success'] == true) {
+        final songsData = result['data'] as List<dynamic>? ?? [];
         setState(() {
           songs =
-              (result['songs'] as List)
+              songsData
                   .map((songJson) => SetListSong.fromJson(songJson))
                   .toList();
+          _dataSource = result['source'];
         });
+
+        _showDataSourceIndicator(_dataSource ?? 'unknown');
       } else {
         _showErrorSnackBar(result['message'] ?? 'Failed to load songs');
       }
@@ -455,19 +840,90 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
     }
   }
 
+  void _showDataSourceIndicator(String source) {
+    if (!mounted) return;
+
+    String message;
+    Color color;
+
+    switch (source) {
+      case 'online':
+        message = '🌐 Live songs';
+        color = Colors.green;
+        break;
+      case 'cache':
+        message = '📱 Cached songs';
+        color = Colors.orange;
+        break;
+      case 'local':
+        message = '💾 Local songs';
+        color = Colors.blue;
+        break;
+      default:
+        return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: 1),
+        backgroundColor: color,
+      ),
+    );
+  }
+
   Future<void> _removeSong(SetListSong song) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF2A2A2A),
-          title: const Text(
-            'Remove Song',
-            style: TextStyle(color: Colors.white),
+          title: Row(
+            children: [
+              const Text('Remove Song', style: TextStyle(color: Colors.white)),
+              const Spacer(),
+              // Connection indicator
+              Icon(
+                _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: _isOnline ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+            ],
           ),
-          content: Text(
-            'Remove "${song.songName}" from this set list?',
-            style: const TextStyle(color: Colors.white70),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!_isOnline)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.cloud_off,
+                        color: Colors.orange,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Marking for removal - will sync when online',
+                          style: TextStyle(color: Colors.orange, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Text(
+                'Remove "${song.songName}" from this set list?',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -492,9 +948,18 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
 
     if (confirm == true) {
       try {
-        final result = await SetListService.removeSongFromSetlist(song.id);
+        final result = await widget.setlistService.removeSongFromSetlist(
+          song.id,
+        );
         if (result['success'] == true) {
-          _showSuccessSnackBar('Song removed successfully');
+          final isPending = result['pending_sync'] ?? false;
+          if (isPending) {
+            _showSuccessSnackBar(
+              'Song marked for removal, will sync when online',
+            );
+          } else {
+            _showSuccessSnackBar('Song removed successfully');
+          }
           await _loadSongs();
         } else {
           _showErrorSnackBar(result['message'] ?? 'Failed to remove song');
@@ -517,6 +982,19 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
     );
   }
 
+  Color _getSourceColor(String source) {
+    switch (source) {
+      case 'online':
+        return Colors.green;
+      case 'cache':
+        return Colors.orange;
+      case 'local':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
   Widget _buildSongCard(SetListSong song) {
     return Card(
       color: Colors.transparent,
@@ -535,7 +1013,7 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
                     artist: song.artistName,
                     lyrics: song.savedLyrics,
                     language: song.lyricsFormat,
-                    id: song.id,
+                    id: song.songId, // Use songId instead of id for music player
                   ),
             ),
           );
@@ -600,15 +1078,27 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      song.songName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            song.songName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // Connection indicator for each song
+                        Icon(
+                          _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                          color: _isOnline ? Colors.green : Colors.orange,
+                          size: 14,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -621,24 +1111,57 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                      ),
-                      child: Text(
-                        _getFormatDisplayName(song.lyricsFormat),
-                        style: const TextStyle(
-                          color: Colors.blue,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.blue.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Text(
+                            _getFormatDisplayName(song.lyricsFormat),
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (_dataSource != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getSourceColor(
+                                _dataSource!,
+                              ).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _getSourceColor(_dataSource!),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              _dataSource!.toUpperCase(),
+                              style: TextStyle(
+                                color: _getSourceColor(_dataSource!),
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -654,20 +1177,28 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
                 },
                 itemBuilder:
                     (BuildContext context) => [
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'remove',
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.remove_circle,
                               color: Colors.red,
                               size: 18,
                             ),
-                            SizedBox(width: 8),
-                            Text(
+                            const SizedBox(width: 8),
+                            const Text(
                               'Remove',
                               style: TextStyle(color: Colors.white),
                             ),
+                            if (!_isOnline) ...[
+                              const Spacer(),
+                              const Icon(
+                                Icons.cloud_off,
+                                color: Colors.orange,
+                                size: 14,
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -705,9 +1236,44 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
       backgroundColor: const Color(0xFF1A1A1A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF173857),
-        title: Text(
-          widget.folder.folderName,
-          style: const TextStyle(color: Colors.white),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.folder.folderName,
+                style: const TextStyle(color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // Online/Offline indicator in app bar
+            Icon(
+              _isOnline ? Icons.cloud_done : Icons.cloud_off,
+              color: _isOnline ? Colors.green : Colors.orange,
+              size: 20,
+            ),
+            if (_dataSource != null) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getSourceColor(_dataSource!).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _getSourceColor(_dataSource!),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  _dataSource!.toUpperCase(),
+                  style: TextStyle(
+                    color: _getSourceColor(_dataSource!),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -739,24 +1305,76 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.music_note, size: 80, color: Colors.white54),
+          Icon(
+            _isOnline ? Icons.music_note : Icons.cloud_off,
+            size: 80,
+            color: Colors.white54,
+          ),
           const SizedBox(height: 16),
-          const Text(
-            'No Songs Yet',
-            style: TextStyle(
+          Text(
+            _isOnline ? 'No Songs Yet' : 'No Songs Available Offline',
+            style: const TextStyle(
               color: Colors.white70,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Add songs from the music player\nto start building your set list',
-            style: TextStyle(color: Colors.white54, fontSize: 16),
+          Text(
+            _isOnline
+                ? 'Add songs from the music player\nto start building your set list'
+                : 'Connect to internet to see your songs\nor add new ones from the music player',
+            style: const TextStyle(color: Colors.white54, fontSize: 16),
             textAlign: TextAlign.center,
           ),
+          if (!_isOnline) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off,
+                        color: Colors.orange,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Offline Mode',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Songs added to this set list will sync when you\'re back online',
+                    style: TextStyle(color: Colors.orange, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }

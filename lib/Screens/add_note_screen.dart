@@ -1,15 +1,22 @@
+// Updated AddNoteScreen.dart with offline support
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lyrics/Service/worship_note_service.dart';
+import 'package:lyrics/OfflineService/offline_user_service.dart';
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class AddNoteScreen extends StatefulWidget {
   final String? existingNoteId;
   final String? existingNoteContent;
+  final OfflineWorshipNotesService notesService;
+  final bool isOnline;
 
   const AddNoteScreen({
     super.key,
     this.existingNoteId,
     this.existingNoteContent,
+    required this.notesService,
+    required this.isOnline,
   });
 
   @override
@@ -19,13 +26,16 @@ class AddNoteScreen extends StatefulWidget {
 class _AddNoteScreenState extends State<AddNoteScreen> {
   final TextEditingController _noteController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
+
   bool _isKeyboardVisible = false;
   bool _isSaving = false;
-  final WorshipNotesService _notesService = WorshipNotesService();
+  bool _isOnline = false;
 
   @override
   void initState() {
     super.initState();
+    _isOnline = widget.isOnline;
 
     // Initialize with existing note content if editing
     if (widget.existingNoteContent != null) {
@@ -43,6 +53,46 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         _isKeyboardVisible = _focusNode.hasFocus;
       });
     });
+
+    // Listen to connectivity changes
+    _connectivityManager.connectivityStream.listen((result) {
+      final wasOffline = !_isOnline;
+      _isOnline = result != ConnectivityResult.none;
+
+      if (mounted) {
+        setState(() {});
+
+        // Show connectivity status
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+            duration: Duration(seconds: 2),
+            backgroundColor: _isOnline ? Colors.green : Colors.orange,
+          ),
+        );
+
+        // Sync when coming back online
+        if (_isOnline && wasOffline) {
+          _syncDataWhenOnline();
+        }
+      }
+    });
+  }
+
+  Future<void> _syncDataWhenOnline() async {
+    try {
+      await widget.notesService.syncPendingChanges();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Notes synchronized'),
+          duration: Duration(seconds: 2),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      print('Background sync failed: $e');
+    }
   }
 
   @override
@@ -65,36 +115,38 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
     try {
       if (widget.existingNoteId != null) {
         // Update existing note
-        final result = await _notesService.updateWorshipNote(
+        final result = await widget.notesService.updateWorshipNote(
           noteId: widget.existingNoteId!,
           note: _noteController.text.trim(),
         );
 
         if (result['success']) {
-          Navigator.of(context).pop({'success': true, 'isUpdate': true});
-        } else {
-          ScaffoldMessenger.of(
+          final isPending = result['pending_sync'] ?? false;
+          Navigator.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(result['message'])));
+          ).pop({'success': true, 'isUpdate': true, 'pending_sync': isPending});
+        } else {
+          _showErrorSnackBar(result['message']);
         }
       } else {
         // Create new note
-        final result = await _notesService.createWorshipNote(
+        final result = await widget.notesService.createWorshipNote(
           _noteController.text.trim(),
         );
 
         if (result['success']) {
-          Navigator.of(context).pop({'success': true, 'isUpdate': false});
+          final isPending = result['pending_sync'] ?? false;
+          Navigator.of(context).pop({
+            'success': true,
+            'isUpdate': false,
+            'pending_sync': isPending,
+          });
         } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(result['message'])));
+          _showErrorSnackBar(result['message']);
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+      _showErrorSnackBar('An error occurred: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -110,26 +162,95 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
       return;
     }
 
+    // Show confirmation dialog with offline warning
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: Color(0xFF1E3A5F),
+            title: Row(
+              children: [
+                Text('Delete Note', style: TextStyle(color: Colors.white)),
+                const Spacer(),
+                Icon(
+                  _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                  color: _isOnline ? Colors.green : Colors.orange,
+                  size: 20,
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!_isOnline)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.cloud_off,
+                          color: Colors.orange,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Marking for deletion - will sync when online',
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Text(
+                  'Are you sure you want to delete this note? This action cannot be undone.',
+                  style: TextStyle(color: Colors.white.withOpacity(0.8)),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel', style: TextStyle(color: Colors.white)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Delete', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+    );
+
+    if (confirm != true) return;
+
     setState(() {
       _isSaving = true;
     });
 
     try {
-      final result = await _notesService.deleteWorshipNote(
+      final result = await widget.notesService.deleteWorshipNote(
         widget.existingNoteId!,
       );
 
       if (result['success']) {
-        Navigator.of(context).pop({'success': true, 'deleted': true});
-      } else {
-        ScaffoldMessenger.of(
+        final isPending = result['pending_sync'] ?? false;
+        Navigator.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(result['message'])));
+        ).pop({'success': true, 'deleted': true, 'pending_sync': isPending});
+      } else {
+        _showErrorSnackBar(result['message']);
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+      _showErrorSnackBar('An error occurred: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -137,6 +258,12 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         });
       }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
   @override
@@ -150,13 +277,24 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           icon: Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          widget.existingNoteId != null ? 'Edit Note' : 'New Note',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
+        title: Row(
+          children: [
+            Text(
+              widget.existingNoteId != null ? 'Edit Note' : 'New Note',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            // Online/Offline indicator
+            Icon(
+              _isOnline ? Icons.cloud_done : Icons.cloud_off,
+              color: _isOnline ? Colors.green : Colors.orange,
+              size: 20,
+            ),
+          ],
         ),
         actions: [
           if (_isSaving)
@@ -176,13 +314,22 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           else
             TextButton(
               onPressed: _saveNote,
-              child: Text(
-                'Done',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Done',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (!_isOnline) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.cloud_off, color: Colors.orange, size: 16),
+                  ],
+                ],
               ),
             ),
           IconButton(
@@ -203,6 +350,29 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         ),
         child: Column(
           children: [
+            // Offline warning banner
+            if (!_isOnline)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                color: Colors.orange.withOpacity(0.1),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_off, color: Colors.orange, size: 16),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Offline mode: Changes will sync when online',
+                        style: TextStyle(color: Colors.orange, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Main text area
             Expanded(
               child: Container(
@@ -220,7 +390,10 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                     height: 1.5,
                   ),
                   decoration: InputDecoration(
-                    hintText: 'Start typing your worship notes...',
+                    hintText:
+                        _isOnline
+                            ? 'Start typing your worship notes...'
+                            : 'Start typing your worship notes... (offline)',
                     hintStyle: TextStyle(
                       color: Colors.white.withOpacity(0.5),
                       fontSize: 16,
@@ -283,12 +456,20 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                       },
                     ),
                     Spacer(),
-                    Text(
-                      '${_noteController.text.split(' ').where((word) => word.isNotEmpty).length} words',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 12,
-                      ),
+                    Row(
+                      children: [
+                        if (!_isOnline) ...[
+                          Icon(Icons.cloud_off, color: Colors.orange, size: 14),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(
+                          '${_noteController.text.split(' ').where((word) => word.isNotEmpty).length} words',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.5),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -354,15 +535,41 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Connection status header
+              Row(
+                children: [
+                  Text(
+                    'Options',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                    color: _isOnline ? Colors.green : Colors.orange,
+                    size: 20,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
               ListTile(
                 leading: Icon(Icons.share, color: Colors.white),
                 title: Text(
                   'Share Note',
                   style: TextStyle(color: Colors.white),
                 ),
+                trailing:
+                    !_isOnline
+                        ? Icon(Icons.cloud_off, color: Colors.orange, size: 16)
+                        : null,
                 onTap: () {
                   Navigator.pop(context);
-                  // Handle share
+                  // Handle share - works offline too
+                  _shareNote();
                 },
               ),
               ListTile(
@@ -386,9 +593,17 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
                     'Delete Note',
                     style: TextStyle(color: Colors.red),
                   ),
+                  trailing:
+                      !_isOnline
+                          ? Icon(
+                            Icons.cloud_off,
+                            color: Colors.orange,
+                            size: 16,
+                          )
+                          : null,
                   onTap: () {
                     Navigator.pop(context);
-                    _showDeleteConfirmation();
+                    _deleteNote();
                   },
                 ),
             ],
@@ -398,31 +613,16 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
     );
   }
 
-  void _showDeleteConfirmation() {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            backgroundColor: Color(0xFF1E3A5F),
-            title: Text('Delete Note', style: TextStyle(color: Colors.white)),
-            content: Text(
-              'Are you sure you want to delete this note? This action cannot be undone.',
-              style: TextStyle(color: Colors.white.withOpacity(0.8)),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Cancel', style: TextStyle(color: Colors.white)),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _deleteNote();
-                },
-                child: Text('Delete', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-    );
+  void _shareNote() {
+    // Basic share functionality - works offline
+    final text = _noteController.text;
+    if (text.trim().isNotEmpty) {
+      // You can use share_plus package or platform-specific sharing
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Share functionality would be implemented here'),
+        ),
+      );
+    }
   }
 }

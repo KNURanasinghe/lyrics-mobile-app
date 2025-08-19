@@ -1160,12 +1160,20 @@ class _HomePageState extends State<HomePage> {
                 _buildDrawerItem(
                   Icons.language_outlined,
                   'Languages',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Navigator.push(
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => LanguageScreen()),
                     );
+
+                    // If language was changed, refresh the home page
+                    if (result != null && result != currentLanguage) {
+                      print(
+                        'Language changed from $currentLanguage to $result',
+                      );
+                      _loadData(); // Refresh all data
+                    }
                   },
                 ),
                 _buildDrawerItem(
@@ -1252,12 +1260,19 @@ class _HomePageState extends State<HomePage> {
                 _buildDrawerItem(
                   Icons.settings_outlined,
                   'App Settings',
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    Navigator.push(
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => SettingsScreen()),
                     );
+
+                    if (result != null) {
+                      print(
+                        'Language changed from $currentLanguage to $result',
+                      );
+                      _loadData(); // Refresh all data
+                    }
                   },
                 ),
                 _buildDrawerItem(
