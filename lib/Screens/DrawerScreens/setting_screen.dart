@@ -17,6 +17,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double lyricsFontSize = 18.0;
   Color selectedLyricsColor = Colors.white; // Add this for color selection
 
+  bool _hasChanges = false;
+
+  void _markAsChanged() {
+    _hasChanges = true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -42,12 +48,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveFontSize(double fontSize) async {
     await FontSettingsService.saveFontSize(fontSize);
+    _markAsChanged();
     setState(() {
       lyricsFontSize = fontSize;
     });
   }
 
   Future<void> _saveBoldText(bool isBold) async {
+    _markAsChanged();
     await FontSettingsService.saveBoldText(isBold);
     setState(() {
       isBoldText = isBold;
@@ -55,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveLyricsColor(Color color) async {
+    _markAsChanged();
     await ColorService.saveColor(color);
     setState(() {
       selectedLyricsColor = color;
@@ -189,7 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.pop(context, _hasChanges),
         ),
         title: Text(
           'Settings',

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:lyrics/FireBase/auth_service.dart';
+import 'package:lyrics/OfflineService/offline_user_service.dart';
 import 'package:lyrics/Screens/Profile/edit_profile.dart';
 import 'package:lyrics/Service/language_service.dart';
 import 'package:lyrics/Service/user_service.dart';
+import 'package:lyrics/widgets/cached_image_widget.dart';
 import 'package:lyrics/widgets/main_background.dart';
 import 'package:lyrics/widgets/profile_section_container.dart';
 import 'package:lyrics/Models/user_model.dart';
@@ -16,19 +18,22 @@ class Profile extends StatefulWidget {
 }
 
 class _ProfileState extends State<Profile> {
-  final UserService _userService = UserService();
+  final OfflineUserService _userService = OfflineUserService();
   UserModel? _currentUser;
   Map<String, dynamic>? _profileDetails;
   bool _isLoading = true;
   String? _errorMessage;
   String _preferredLanguage = 'English';
   String? proemail;
+  String? profileImageUrl;
+  bool isPremium = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfileData();
     _loadPreferredLanguage();
+    loadPremiumStatus();
   }
 
   Future<void> _loadPreferredLanguage() async {
@@ -50,24 +55,28 @@ class _ProfileState extends State<Profile> {
 
     try {
       // Load basic user info
-      final userResult = await _userService.getCurrentUserProfile();
-      if (!userResult['success']) {
-        throw Exception(userResult['message'] ?? 'Failed to load user profile');
-      }
+      // final userResult = await _userService.getCurrentUserProfile();
+      // if (!userResult['success']) {
+      //   throw Exception(userResult['message'] ?? 'Failed to load user profile');
+      // }
 
-      _currentUser = userResult['user'] as UserModel;
-
+      // _currentUser = userResult['user'] as UserModel;
+      // print('users results as user model ${_currentUser!.id}');
+      final userId = await UserService.getUserID();
+      print('user id in profile $userId');
       // Load extended profile details if user exists
-      if (_currentUser != null) {
-        final profileResult = await _userService.getFullProfile(
-          _currentUser!.id.toString(),
-        );
+      if (userId.isNotEmpty) {
+        final profileResult = await _userService.getFullProfile(userId);
+
+        print('profile result in profile ${profileResult['profile']}');
         if (profileResult['success']) {
-          _profileDetails = profileResult['profile'];
+          _profileDetails = profileResult['profile'] as Map<String, dynamic>?;
         }
       }
 
       setState(() {
+        profileImageUrl =
+            _profileDetails?['profile']?['profile_image'] as String?;
         _isLoading = false;
       });
     } catch (e) {
@@ -78,9 +87,53 @@ class _ProfileState extends State<Profile> {
     }
   }
 
+  Widget _buildProfileImage() {
+    final profileImageUrl = _getProfileValue('profile_image', '');
+
+    if (profileImageUrl.isNotEmpty && profileImageUrl != 'null') {
+      return CachedImageWidget(
+        imageUrl: profileImageUrl,
+        width: 90,
+        height: 90,
+        fit: BoxFit.cover,
+        borderRadius: BorderRadius.circular(45),
+        placeholder: Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(45),
+          ),
+          child: Center(
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey[600]!),
+              ),
+            ),
+          ),
+        ),
+        errorWidget: CircleAvatar(
+          radius: 45,
+          backgroundColor: Colors.grey[300],
+          child: Icon(Icons.person, size: 40, color: Colors.grey[600]),
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 45,
+      backgroundColor: Colors.grey[300],
+      child: Icon(Icons.person, size: 40, color: Colors.grey[600]),
+    );
+  }
+
   Future<void> _refreshProfile() async {
     await _loadProfileData();
     await _loadPreferredLanguage();
+    await loadPremiumStatus();
   }
 
   Future<void> emailImage() async {
@@ -101,8 +154,16 @@ class _ProfileState extends State<Profile> {
     if (_profileDetails![key] != null) {
       return _profileDetails![key].toString();
     }
-    defaultValue = proemail!;
+    defaultValue = proemail ?? '';
     return defaultValue;
+  }
+
+  Future<void> loadPremiumStatus() async {
+    final ispremiun = await UserService.getIsPremium();
+    print('premium state is: $ispremiun');
+    setState(() {
+      isPremium = ispremiun == '1';
+    });
   }
 
   // Helper method to safely get profile image
@@ -177,16 +238,12 @@ class _ProfileState extends State<Profile> {
                         child: Column(
                           children: [
                             // Profile Image
-                            CircleAvatar(
-                              radius: 45,
-                              backgroundImage: _getProfileImage(),
-                              backgroundColor: Colors.grey[300],
-                            ),
+                            _buildProfileImage(),
                             SizedBox(height: 16),
 
                             // Email
                             Text(
-                              _currentUser?.email ?? 'No email',
+                              _profileDetails!['email'] ?? 'No email',
                               style: TextStyle(
                                 color: Colors.grey[400],
                                 fontSize: 14,
@@ -196,7 +253,7 @@ class _ProfileState extends State<Profile> {
 
                             // Name
                             Text(
-                              _currentUser?.fullname ?? 'No name',
+                              _profileDetails!['fullname'] ?? 'No name',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
@@ -252,21 +309,21 @@ class _ProfileState extends State<Profile> {
                             // Phone number
                             _buildProfileRow(
                               'Phone no.',
-                              _currentUser?.phonenumber ?? 'Not provided',
+                              _profileDetails!['phonenumber'] ?? 'Not provided',
                             ),
                             _buildDivider(),
 
                             // User ID
                             _buildProfileRow(
                               'User ID',
-                              _currentUser?.id?.toString() ?? 'N/A',
+                              _profileDetails!['id'].toString() ?? 'N/A',
                             ),
                             _buildDivider(),
 
                             // Dynamic fields from profile details
                             _buildProfileRow(
                               'Country',
-                              _getProfileValue('country', 'Sri Lanka'),
+                              _getProfileValue('country', 'Not Provided'),
                             ),
                             _buildDivider(),
 
@@ -295,7 +352,7 @@ class _ProfileState extends State<Profile> {
 
                             _buildProfileRow(
                               'Account Type',
-                              _getProfileValue('account_type', 'Free'),
+                              isPremium == true ? 'Premium' : 'Free',
                             ),
                             _buildDivider(),
 

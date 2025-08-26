@@ -320,8 +320,9 @@ class ArtistService {
   // Get artist's songs
   Future<Map<String, dynamic>> getArtistSongs(int artistId) async {
     try {
+      print('artist id $artistId');
       final result = await _apiService.get('/artists/$artistId/songs');
-
+      print('artist songs ${result['data']}');
       if (result['success']) {
         final List<dynamic> songsData = result['data']['data'] ?? [];
         print('Artist Songs: $songsData');

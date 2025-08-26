@@ -56,7 +56,7 @@
 class UserModel {
   final int? id;
   final String fullname;
-  final String phonenumber;
+  final String? phonenumber;
   final String email;
   final String password;
   final bool isPremium;
@@ -69,7 +69,7 @@ class UserModel {
     required this.fullname,
     required this.phonenumber,
     required this.email,
-    required this.password,
+    this.password = '',
     this.isPremium = false,
     this.createdAt,
     this.updatedAt,

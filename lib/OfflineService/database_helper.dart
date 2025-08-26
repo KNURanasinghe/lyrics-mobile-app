@@ -18,7 +18,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'lyrics_app_offline.db');
     return await openDatabase(
       path,
-      version: 2, // Increment version to trigger upgrade
+      version: 3, // Increment version to trigger upgrade for group songs
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
@@ -97,6 +97,39 @@ class DatabaseHelper {
         synced INTEGER DEFAULT 0,
         FOREIGN KEY (artist_id) REFERENCES artists (id),
         FOREIGN KEY (album_id) REFERENCES albums (id)
+      )
+    ''');
+
+    // Group Songs table - NEW
+    await db.execute('''
+      CREATE TABLE group_songs(
+        id INTEGER PRIMARY KEY,
+        songname TEXT NOT NULL,
+        album_name TEXT,
+        lyrics_si TEXT,
+        lyrics_en TEXT,
+        lyrics_ta TEXT,
+        image TEXT,
+        language TEXT,
+        release_date TEXT,
+        duration TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        synced INTEGER DEFAULT 0
+      )
+    ''');
+
+    // Group Song Artists junction table - NEW
+    await db.execute('''
+      CREATE TABLE group_song_artists(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_song_id INTEGER NOT NULL,
+        artist_id INTEGER NOT NULL,
+        artist_name TEXT,
+        artist_image TEXT,
+        synced INTEGER DEFAULT 0,
+        FOREIGN KEY (group_song_id) REFERENCES group_songs (id),
+        UNIQUE(group_song_id, artist_id)
       )
     ''');
 
@@ -212,6 +245,7 @@ class DatabaseHelper {
   }
 
   Future<void> _createIndexes(Database db) async {
+    // Existing indexes
     await db.execute('CREATE INDEX idx_albums_artist ON albums(artist_id)');
     await db.execute('CREATE INDEX idx_songs_artist ON songs(artist_id)');
     await db.execute('CREATE INDEX idx_songs_album ON songs(album_id)');
@@ -220,6 +254,20 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_albums_sync ON albums(synced)');
     await db.execute('CREATE INDEX idx_songs_sync ON songs(synced)');
     await db.execute('CREATE INDEX idx_artists_sync ON artists(synced)');
+
+    // New indexes for group songs
+    await db.execute(
+      'CREATE INDEX idx_group_songs_language ON group_songs(language)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_group_songs_sync ON group_songs(synced)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_group_song_artists_song ON group_song_artists(group_song_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_group_song_artists_artist ON group_song_artists(artist_id)',
+    );
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -228,6 +276,66 @@ class DatabaseHelper {
     if (oldVersion < 2) {
       // Add missing columns to existing tables
       await _addMissingColumns(db);
+    }
+
+    if (oldVersion < 3) {
+      // Add group songs tables
+      await _addGroupSongsTables(db);
+    }
+  }
+
+  Future<void> _addGroupSongsTables(Database db) async {
+    try {
+      // Create group_songs table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS group_songs(
+          id INTEGER PRIMARY KEY,
+          songname TEXT NOT NULL,
+          album_name TEXT,
+          lyrics_si TEXT,
+          lyrics_en TEXT,
+          lyrics_ta TEXT,
+          image TEXT,
+          language TEXT,
+          release_date TEXT,
+          duration TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          synced INTEGER DEFAULT 0
+        )
+      ''');
+
+      // Create group_song_artists junction table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS group_song_artists(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          group_song_id INTEGER NOT NULL,
+          artist_id INTEGER NOT NULL,
+          artist_name TEXT,
+          artist_image TEXT,
+          synced INTEGER DEFAULT 0,
+          FOREIGN KEY (group_song_id) REFERENCES group_songs (id),
+          UNIQUE(group_song_id, artist_id)
+        )
+      ''');
+
+      // Create indexes for group songs
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_group_songs_language ON group_songs(language)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_group_songs_sync ON group_songs(synced)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_group_song_artists_song ON group_song_artists(group_song_id)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_group_song_artists_artist ON group_song_artists(artist_id)',
+      );
+
+      print('✅ Added group songs tables');
+    } catch (e) {
+      print('⚠️ Group songs tables might already exist: $e');
     }
   }
 
@@ -371,6 +479,8 @@ class DatabaseHelper {
     final db = await database;
 
     final tables = [
+      'group_song_artists', // Clear junction table first
+      'group_songs', // Then group songs
       'worship_notes',
       'setlist_songs',
       'setlist_folders',
@@ -402,6 +512,31 @@ class DatabaseHelper {
     _database = null;
     await database; // This will recreate the database
     print('✅ Database reset successfully');
+  }
+
+  // Method specifically for clearing group songs data
+  Future<void> clearGroupSongsData() async {
+    final db = await database;
+    try {
+      await db.delete('group_song_artists');
+      await db.delete('group_songs');
+      print('✅ Cleared group songs data');
+    } catch (e) {
+      print('⚠️ Error clearing group songs data: $e');
+    }
+  }
+
+  // Method to check if group songs tables exist
+  Future<bool> groupSongsTablesExist() async {
+    final db = await database;
+    try {
+      final result = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('group_songs', 'group_song_artists')",
+      );
+      return result.length == 2;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<void> close() async {

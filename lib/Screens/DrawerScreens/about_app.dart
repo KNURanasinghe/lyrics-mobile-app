@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter_social_button/flutter_social_button.dart';
 import 'package:lyrics/widgets/main_background.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Assuming you have this import for your background
 // import 'package:lyrics/Const/const.dart';
@@ -14,6 +16,23 @@ class AboutApp extends StatefulWidget {
 }
 
 class _AboutAppState extends State<AboutApp> {
+  Future<void> _launchURL(String url) async {
+    try {
+      final Uri uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication, // Opens in external browser/app
+        );
+      } else {
+        throw 'Could not launch $url';
+      }
+    } catch (e) {
+      print('Error launching URL: $e');
+      // You could show a snackbar or dialog here to inform the user
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -123,6 +142,7 @@ class _AboutAppState extends State<AboutApp> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const Text(
+                      textAlign: TextAlign.center,
                       'A Vision by: Johnson Shan',
                       style: TextStyle(
                         color: Colors.white,
@@ -132,6 +152,7 @@ class _AboutAppState extends State<AboutApp> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
+                      textAlign: TextAlign.center,
                       'Designed & Developed by: JS Christian Productions',
                       style: TextStyle(
                         color: Colors.white,
@@ -149,7 +170,8 @@ class _AboutAppState extends State<AboutApp> {
                         Icon(Icons.language, color: Colors.lightBlue, size: 20),
                         SizedBox(width: 8),
                         Text(
-                          'www.rockofpraise.org',
+                          textAlign: TextAlign.center,
+                          ' www.therockofpraise.org ',
                           style: TextStyle(
                             color: Colors.lightBlue,
                             fontSize: 16,
@@ -158,8 +180,167 @@ class _AboutAppState extends State<AboutApp> {
                         ),
                       ],
                     ),
+
+                    // Social Media Icons Row
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // WhatsApp
+                          GestureDetector(
+                            onTap:
+                                () => _launchURL(
+                                  'https://whatsapp.com/channel/0029Vb6iFkCCMY0Lkvm0Ju0Z',
+                                ),
+
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF25D366),
+                                borderRadius: BorderRadius.circular(30),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                FontAwesomeIcons.whatsapp,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+
+                          // YouTube
+                          GestureDetector(
+                            onTap:
+                                () => _launchURL(
+                                  'https://youtube.com/@therockofpraise?si=YJT-6zRquDCFPkGH',
+                                ),
+
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF0000),
+                                borderRadius: BorderRadius.circular(30),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                FontAwesomeIcons.youtube,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+
+                          // Instagram
+                          GestureDetector(
+                            onTap:
+                                () => _launchURL(
+                                  'https://www.instagram.com/rockofpraise?igsh=MWZzNzF4NHdoazEwYg%3D%3D&utm_source=qr',
+                                ),
+
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF833AB4),
+                                    Color(0xFFE1306C),
+                                    Color(0xFFFD1D1D),
+                                    Color(0xFFFFDC80),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(30),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                FontAwesomeIcons.instagram,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+
+                          // Facebook
+                          GestureDetector(
+                            onTap:
+                                () => _launchURL(
+                                  'https://www.facebook.com/share/1F8qumg3oz/?mibextid=wwXIfr',
+                                ),
+
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1877F2),
+                                borderRadius: BorderRadius.circular(30),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                FontAwesomeIcons.facebookF,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+
+                          // X (Twitter)
+                          GestureDetector(
+                            onTap:
+                                () => _launchURL(
+                                  'https://x.com/praise_the37536?s=21&t=qF7E-l9AG55RTMPLuhoT_A',
+                                ),
+
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(30),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                FontAwesomeIcons.xTwitter,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     const Text(
+                      textAlign: TextAlign.center,
                       '© 2025 The Rock of Praise. All rights reserved.',
                       style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),

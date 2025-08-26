@@ -37,9 +37,11 @@ class OfflineAlbumService {
 
     if (isConnected) {
       try {
+        print('📡 Fetching albums for language: $language from server...');
         final result = await _onlineService.getAlbumsByLanguage(language);
         if (result['success']) {
-          await _cacheAlbums(result['albums']);
+          // Cache with proper language association
+          await _cacheAlbumsByLanguage(result['albums'], language);
           return {...result, 'source': 'online'};
         }
       } catch (e) {
@@ -47,7 +49,41 @@ class OfflineAlbumService {
       }
     }
 
+    // Always try cache when offline or when online fails
+    print('📱 Loading albums for language: $language from cache...');
     return await _getCachedAlbumsByLanguage(language);
+  }
+
+  Future<void> _cacheAlbumsByLanguage(
+    List<AlbumModel> albums,
+    String language,
+  ) async {
+    final db = await _dbHelper.database;
+
+    for (final album in albums) {
+      // Ensure all necessary data is included
+      final albumData =
+          album.toFullJson()
+            ..['synced'] = 1
+            ..['language'] =
+                language // Associate with language
+            ..['updated_at'] = DateTime.now().toIso8601String();
+
+      // Ensure artist data is preserved
+      if (album.artistName != null) {
+        albumData['artist_name'] = album.artistName;
+      }
+      if (album.artistImage != null) {
+        albumData['artist_image'] = album.artistImage;
+      }
+
+      await db.insert(
+        'albums',
+        albumData,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    print('✅ Cached ${albums.length} albums for language: $language');
   }
 
   // Get album by ID with offline support
@@ -221,26 +257,133 @@ class OfflineAlbumService {
     String language,
   ) async {
     final db = await _dbHelper.database;
-    final maps = await db.rawQuery(
-      '''
-      SELECT albums.*, artists.name as artist_name, artists.image as artist_image, artists.language
-      FROM albums 
-      INNER JOIN artists ON albums.artist_id = artists.id 
-      WHERE artists.language = ? AND albums.synced != -1
-      ORDER BY albums.created_at DESC
-    ''',
-      [language],
-    );
 
-    final albums = maps.map((map) => AlbumModel.fromJson(map)).toList();
+    try {
+      // First try to get albums by language through artist relationship
+      var maps = await db.rawQuery(
+        '''
+        SELECT albums.*, 
+               COALESCE(albums.artist_name, artists.name) as artist_name,
+               COALESCE(albums.artist_image, artists.image) as artist_image,
+               artists.language
+        FROM albums 
+        LEFT JOIN artists ON albums.artist_id = artists.id 
+        WHERE artists.language = ? AND albums.synced != -1
+        ORDER BY albums.created_at DESC
+        ''',
+        [language],
+      );
 
-    return {
-      'success': true,
-      'albums': albums,
-      'language': language,
-      'message': 'Albums loaded from cache',
-      'source': 'cache',
-    };
+      // If no results and we have a stored language in albums, try that
+      if (maps.isEmpty) {
+        maps = await db.rawQuery(
+          '''
+          SELECT albums.*, 
+                 COALESCE(albums.artist_name, artists.name) as artist_name,
+                 COALESCE(albums.artist_image, artists.image) as artist_image,
+                 COALESCE(albums.language, artists.language) as language
+          FROM albums 
+          LEFT JOIN artists ON albums.artist_id = artists.id 
+          WHERE albums.language = ? AND albums.synced != -1
+          ORDER BY albums.created_at DESC
+          ''',
+          [language],
+        );
+      }
+
+      // Parse albums with error handling
+      final albums =
+          maps
+              .map((map) {
+                try {
+                  // Ensure required fields are not null
+                  final albumMap = Map<String, dynamic>.from(map);
+
+                  // Provide fallback values for missing data
+                  albumMap['artist_name'] ??= 'Unknown Artist';
+                  albumMap['image'] ??= '';
+
+                  return AlbumModel.fromJson(albumMap);
+                } catch (e) {
+                  print('⚠️ Error parsing album from cache: $e');
+                  print('Raw data: $map');
+                  return null;
+                }
+              })
+              .where((album) => album != null)
+              .cast<AlbumModel>()
+              .toList();
+
+      // If no albums found for this language, try fallback
+      if (albums.isEmpty) {
+        print('⚠️ No cached albums found for language: $language');
+        final fallbackMaps = await db.rawQuery('''
+          SELECT albums.*, 
+                 COALESCE(albums.artist_name, artists.name) as artist_name,
+                 COALESCE(albums.artist_image, artists.image) as artist_image
+          FROM albums 
+          LEFT JOIN artists ON albums.artist_id = artists.id 
+          WHERE albums.synced != -1
+          ORDER BY albums.created_at DESC
+          LIMIT 20
+          ''');
+
+        final fallbackAlbums =
+            fallbackMaps
+                .map((map) {
+                  try {
+                    final albumMap = Map<String, dynamic>.from(map);
+                    albumMap['artist_name'] ??= 'Unknown Artist';
+                    albumMap['image'] ??= '';
+                    return AlbumModel.fromJson(albumMap);
+                  } catch (e) {
+                    return null;
+                  }
+                })
+                .where((album) => album != null)
+                .cast<AlbumModel>()
+                .toList();
+
+        return {
+          'success': true,
+          'albums': fallbackAlbums,
+          'language': language,
+          'languageDisplayName': _getLanguageDisplayName(language),
+          'message': 'Showing cached albums (language fallback)',
+          'source': 'cache_fallback',
+        };
+      }
+
+      return {
+        'success': true,
+        'albums': albums,
+        'language': language,
+        'languageDisplayName': _getLanguageDisplayName(language),
+        'message': 'Albums loaded from cache',
+        'source': 'cache',
+      };
+    } catch (e) {
+      print('❌ Error loading cached albums: $e');
+      return {
+        'success': false,
+        'albums': <AlbumModel>[],
+        'message': 'Error loading cached albums: $e',
+        'source': 'cache_error',
+      };
+    }
+  }
+
+  String _getLanguageDisplayName(String languageCode) {
+    switch (languageCode.toLowerCase()) {
+      case 'en':
+        return 'English';
+      case 'si':
+        return 'Sinhala';
+      case 'ta':
+        return 'Tamil';
+      default:
+        return languageCode.toUpperCase();
+    }
   }
 
   Future<Map<String, dynamic>> _getCachedAlbumById(int id) async {
@@ -270,23 +413,50 @@ class OfflineAlbumService {
 
   Future<Map<String, dynamic>> _getCachedLatestAlbums() async {
     final db = await _dbHelper.database;
-    final maps = await db.rawQuery('''
-      SELECT albums.*, artists.name as artist_name, artists.image as artist_image
-      FROM albums 
-      LEFT JOIN artists ON albums.artist_id = artists.id 
-      WHERE albums.synced != -1
-      ORDER BY albums.created_at DESC 
-      LIMIT 10
-    ''');
 
-    final albums = maps.map((map) => AlbumModel.fromJson(map)).toList();
+    try {
+      final maps = await db.rawQuery('''
+        SELECT albums.*, 
+               COALESCE(albums.artist_name, artists.name) as artist_name,
+               COALESCE(albums.artist_image, artists.image) as artist_image
+        FROM albums 
+        LEFT JOIN artists ON albums.artist_id = artists.id 
+        WHERE albums.synced != -1
+        ORDER BY albums.created_at DESC 
+        LIMIT 10
+      ''');
 
-    return {
-      'success': true,
-      'albums': albums,
-      'message': 'Latest albums loaded from cache',
-      'source': 'cache',
-    };
+      final albums =
+          maps
+              .map((map) {
+                try {
+                  final albumMap = Map<String, dynamic>.from(map);
+                  albumMap['artist_name'] ??= 'Unknown Artist';
+                  albumMap['image'] ??= '';
+                  return AlbumModel.fromJson(albumMap);
+                } catch (e) {
+                  print('⚠️ Error parsing latest album: $e');
+                  return null;
+                }
+              })
+              .where((album) => album != null)
+              .cast<AlbumModel>()
+              .toList();
+
+      return {
+        'success': true,
+        'albums': albums,
+        'message': 'Latest albums loaded from cache',
+        'source': 'cache',
+      };
+    } catch (e) {
+      print('❌ Error loading latest albums from cache: $e');
+      return {
+        'success': false,
+        'albums': <AlbumModel>[],
+        'message': 'Error loading latest albums: $e',
+      };
+    }
   }
 
   Future<Map<String, dynamic>> _getCachedAlbumSongs(int albumId) async {

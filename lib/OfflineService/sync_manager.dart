@@ -1,8 +1,9 @@
-// services/sync_manager.dart
+// services/sync_manager.dart - Enhanced with proactive image caching
 import 'package:lyrics/OfflineService/connectivity_manager.dart';
 import 'package:lyrics/OfflineService/database_helper.dart';
 import 'package:lyrics/Service/album_service.dart';
 import 'package:lyrics/Service/artist_service.dart';
+import 'package:lyrics/Service/image_cache_service.dart';
 import 'package:lyrics/Service/song_service.dart';
 import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/Service/setlist_service.dart';
@@ -19,34 +20,89 @@ class SyncManager {
   SyncManager._internal();
 
   static bool _isSyncing = false;
+  static bool _isImageCaching = false;
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final ConnectivityManager _connectivityManager = ConnectivityManager();
+  final ProactiveImageCacheManager _imageCacheManager =
+      ProactiveImageCacheManager.instance;
 
-  Future<void> performFullSync() async {
+  // Progress callbacks
+  Function(String stage, int progress, int total)? onSyncProgress;
+  Function(String message, bool isError)? onSyncMessage;
+  Function(int cached, int total, int failed)? onImageCacheProgress;
+
+  // Enhanced performFullSync with image caching
+  Future<void> performFullSync({
+    bool includeImageCaching = true,
+    Function(String, int, int)? progressCallback,
+    Function(String, bool)? messageCallback,
+    Function(int, int, int)? imageCacheCallback,
+  }) async {
     if (_isSyncing || !await _connectivityManager.isConnected()) return;
 
     _isSyncing = true;
+    onSyncProgress = progressCallback;
+    onSyncMessage = messageCallback;
+    onImageCacheProgress = imageCacheCallback;
 
     try {
-      print('🔄 Starting full sync...');
+      _notifyProgress('Starting full sync...', 0, includeImageCaching ? 7 : 6);
+      _notifyMessage('🔄 Starting comprehensive sync...', false);
 
-      // Sync in priority order (dependencies first)
+      // Step 1: Sync Artists
+      _notifyProgress('Syncing artists...', 1, includeImageCaching ? 7 : 6);
       await _syncArtists();
+
+      // Step 2: Sync Albums
+      _notifyProgress('Syncing albums...', 2, includeImageCaching ? 7 : 6);
       await _syncAlbums();
+
+      // Step 3: Sync Songs
+      _notifyProgress('Syncing songs...', 3, includeImageCaching ? 7 : 6);
       await _syncSongs();
+
+      // Step 4: Sync Group Songs (if available)
+      _notifyProgress('Syncing group songs...', 4, includeImageCaching ? 7 : 6);
+      await _syncGroupSongs();
+
+      // Step 5: Sync User Data
+      _notifyProgress('Syncing user data...', 5, includeImageCaching ? 7 : 6);
       await _syncUserData();
 
-      // Update last sync time
-      await _updateLastSyncTime();
+      // Step 6: Cache Images Proactively
+      if (includeImageCaching) {
+        _notifyProgress('Caching images...', 6, 7);
+        await _cacheAllImages();
+      }
 
-      print('✅ Full sync completed successfully');
+      // Step 7: Update sync time and cleanup
+      _notifyProgress(
+        'Finalizing sync...',
+        includeImageCaching ? 7 : 6,
+        includeImageCaching ? 7 : 6,
+      );
+      await _updateLastSyncTime();
+      await _cleanupOldData();
+
+      _notifyProgress(
+        'Sync completed!',
+        includeImageCaching ? 7 : 6,
+        includeImageCaching ? 7 : 6,
+      );
+      _notifyMessage('✅ Full sync completed successfully', false);
+
+      // Log final statistics
+      final stats = await getSyncStats();
+      print('📊 Final sync stats: $stats');
     } catch (e) {
+      _notifyMessage('❌ Sync failed: $e', true);
       print('❌ Sync failed: $e');
     } finally {
       _isSyncing = false;
     }
   }
 
+  // Enhanced _syncArtists with image URL collection
   Future<void> _syncArtists() async {
     try {
       print('📡 Syncing artists...');
@@ -56,20 +112,29 @@ class SyncManager {
       if (result['success']) {
         final artistsData = result['artists'] as List<dynamic>;
         final db = await _dbHelper.database;
+        final imageUrls = <String>[];
 
         for (final artistData in artistsData) {
-          // Handle both ArtistModel objects and Map data
           Map<String, dynamic> artistJson;
           if (artistData is ArtistModel) {
             artistJson = artistData.toJson();
+            // Collect image URL
+            if (artistData.image != null && artistData.image!.isNotEmpty) {
+              imageUrls.add(artistData.image!);
+            }
           } else if (artistData is Map<String, dynamic>) {
             artistJson = Map<String, dynamic>.from(artistData);
+            // Collect image URL
+            final imageUrl = artistJson['image'] as String?;
+            if (imageUrl != null && imageUrl.isNotEmpty) {
+              imageUrls.add(imageUrl);
+            }
           } else {
-            continue; // Skip invalid data
+            continue;
           }
 
-          // Ensure sync status is set
           artistJson['synced'] = 1;
+          artistJson['updated_at'] = DateTime.now().toIso8601String();
 
           await db.insert(
             'artists',
@@ -79,12 +144,19 @@ class SyncManager {
         }
 
         print('✅ Synced ${artistsData.length} artists');
+
+        // Cache artist images immediately in background
+        if (imageUrls.isNotEmpty) {
+          _cacheImagesInBackground('artist', imageUrls);
+        }
       }
     } catch (e) {
       print('❌ Artist sync failed: $e');
+      _notifyMessage('❌ Artist sync failed: $e', true);
     }
   }
 
+  // Enhanced _syncAlbums with image URL collection
   Future<void> _syncAlbums() async {
     try {
       print('📡 Syncing albums...');
@@ -94,19 +166,37 @@ class SyncManager {
       if (result['success']) {
         final albumsData = result['albums'] as List<dynamic>;
         final db = await _dbHelper.database;
+        final imageUrls = <String>[];
 
         for (final albumData in albumsData) {
           Map<String, dynamic> albumJson;
           if (albumData is AlbumModel) {
-            albumJson =
-                albumData.toFullJson(); // Use toFullJson for complete data
+            albumJson = albumData.toFullJson();
+            // Collect album and artist image URLs
+            if (albumData.image != null && albumData.image!.isNotEmpty) {
+              imageUrls.add(albumData.image!);
+            }
+            if (albumData.artistImage != null &&
+                albumData.artistImage!.isNotEmpty) {
+              imageUrls.add(albumData.artistImage!);
+            }
           } else if (albumData is Map<String, dynamic>) {
             albumJson = Map<String, dynamic>.from(albumData);
+            // Collect image URLs
+            final albumImage = albumJson['image'] as String?;
+            final artistImage = albumJson['artist_image'] as String?;
+            if (albumImage != null && albumImage.isNotEmpty) {
+              imageUrls.add(albumImage);
+            }
+            if (artistImage != null && artistImage.isNotEmpty) {
+              imageUrls.add(artistImage);
+            }
           } else {
             continue;
           }
 
           albumJson['synced'] = 1;
+          albumJson['updated_at'] = DateTime.now().toIso8601String();
 
           await db.insert(
             'albums',
@@ -116,12 +206,19 @@ class SyncManager {
         }
 
         print('✅ Synced ${albumsData.length} albums');
+
+        // Cache album images immediately in background
+        if (imageUrls.isNotEmpty) {
+          _cacheImagesInBackground('album', imageUrls);
+        }
       }
     } catch (e) {
       print('❌ Album sync failed: $e');
+      _notifyMessage('❌ Album sync failed: $e', true);
     }
   }
 
+  // Enhanced _syncSongs with image URL collection
   Future<void> _syncSongs() async {
     try {
       print('📡 Syncing songs...');
@@ -131,18 +228,42 @@ class SyncManager {
       if (result['success']) {
         final songsData = result['songs'] as List<dynamic>;
         final db = await _dbHelper.database;
+        final imageUrls = <String>[];
 
         for (final songData in songsData) {
           Map<String, dynamic> songJson;
           if (songData is SongModel) {
             songJson = songData.toJson();
+            // Collect song, album, and artist image URLs
+            if (songData.image != null && songData.image!.isNotEmpty) {
+              imageUrls.add(songData.image!);
+            }
+            if (songData.albumImage != null &&
+                songData.albumImage!.isNotEmpty) {
+              imageUrls.add(songData.albumImage!);
+            }
           } else if (songData is Map<String, dynamic>) {
             songJson = Map<String, dynamic>.from(songData);
+            // Collect image URLs
+            final songImage = songJson['image'] as String?;
+            final albumImage = songJson['album_image'] as String?;
+            final artistImage = songJson['artist_image'] as String?;
+
+            if (songImage != null && songImage.isNotEmpty) {
+              imageUrls.add(songImage);
+            }
+            if (albumImage != null && albumImage.isNotEmpty) {
+              imageUrls.add(albumImage);
+            }
+            if (artistImage != null && artistImage.isNotEmpty) {
+              imageUrls.add(artistImage);
+            }
           } else {
             continue;
           }
 
           songJson['synced'] = 1;
+          songJson['updated_at'] = DateTime.now().toIso8601String();
 
           await db.insert(
             'songs',
@@ -152,17 +273,241 @@ class SyncManager {
         }
 
         print('✅ Synced ${songsData.length} songs');
+
+        // Cache song images immediately in background
+        if (imageUrls.isNotEmpty) {
+          _cacheImagesInBackground('song', imageUrls);
+        }
       }
     } catch (e) {
       print('❌ Song sync failed: $e');
+      _notifyMessage('❌ Song sync failed: $e', true);
     }
   }
 
+  // New method: Sync Group Songs with image caching
+  Future<void> _syncGroupSongs() async {
+    try {
+      print('📡 Syncing group songs...');
+
+      // Note: You'll need to implement this based on your GroupSongService
+      // This is a template - adjust according to your actual service
+      /*
+      final groupSongService = GroupSongService(); // Adjust class name
+      final result = await groupSongService.getAllGroupSongs();
+
+      if (result['success']) {
+        final groupSongsData = result['groupSongs'] as List<dynamic>;
+        final db = await _dbHelper.database;
+        final imageUrls = <String>[];
+
+        // Begin transaction for group songs and their artists
+        await db.transaction((txn) async {
+          for (final groupSongData in groupSongsData) {
+            final groupSongJson = Map<String, dynamic>.from(groupSongData);
+            
+            // Collect group song image
+            final groupSongImage = groupSongJson['image'] as String?;
+            if (groupSongImage != null && groupSongImage.isNotEmpty) {
+              imageUrls.add(groupSongImage);
+            }
+
+            groupSongJson['synced'] = 1;
+            groupSongJson['updated_at'] = DateTime.now().toIso8601String();
+
+            await txn.insert(
+              'group_songs',
+              groupSongJson,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+
+            // Handle associated artists
+            final artists = groupSongJson['artists'] as List<dynamic>? ?? [];
+            final groupSongId = groupSongJson['id'];
+            
+            // Clear existing associations
+            await txn.delete(
+              'group_song_artists',
+              where: 'group_song_id = ?',
+              whereArgs: [groupSongId],
+            );
+
+            // Add current associations
+            for (final artist in artists) {
+              final artistMap = Map<String, dynamic>.from(artist);
+              
+              // Collect artist image
+              final artistImage = artistMap['image'] as String?;
+              if (artistImage != null && artistImage.isNotEmpty) {
+                imageUrls.add(artistImage);
+              }
+
+              await txn.insert(
+                'group_song_artists',
+                {
+                  'group_song_id': groupSongId,
+                  'artist_id': artistMap['id'],
+                  'artist_name': artistMap['name'],
+                  'artist_image': artistImage,
+                  'synced': 1,
+                },
+                conflictAlgorithm: ConflictAlgorithm.replace,
+              );
+            }
+          }
+        });
+
+        print('✅ Synced ${groupSongsData.length} group songs');
+        
+        // Cache group song images in background
+        if (imageUrls.isNotEmpty) {
+          _cacheImagesInBackground('group_song', imageUrls);
+        }
+      }
+      */
+
+      print('ℹ️ Group song sync not implemented yet');
+    } catch (e) {
+      print('❌ Group song sync failed: $e');
+      _notifyMessage('❌ Group song sync failed: $e', true);
+    }
+  }
+
+  // Cache images in background for specific type
+  Future<void> _cacheImagesInBackground(
+    String type,
+    List<String> imageUrls,
+  ) async {
+    if (imageUrls.isEmpty) return;
+
+    // Remove duplicates
+    final uniqueUrls = imageUrls.toSet().toList();
+    print(
+      '📸 Queuing ${uniqueUrls.length} $type images for background caching...',
+    );
+
+    // Cache in background without blocking the sync process
+    Future.microtask(() async {
+      try {
+        int cached = 0;
+        for (final url in uniqueUrls) {
+          try {
+            final cachedFile = await _imageCacheManager.getCachedImage(url);
+            if (cachedFile == null) {
+              await _imageCacheManager.downloadAndCacheImage(url);
+            }
+            cached++;
+          } catch (e) {
+            print('Failed to cache $type image: $url');
+          }
+        }
+        print('✅ Background cached $cached/$uniqueUrls.length} $type images');
+      } catch (e) {
+        print('❌ Background image caching failed for $type: $e');
+      }
+    });
+  }
+
+  // Enhanced comprehensive image caching
+  Future<void> _cacheAllImages() async {
+    if (_isImageCaching) return;
+
+    _isImageCaching = true;
+
+    try {
+      _notifyMessage('📸 Starting comprehensive image caching...', false);
+
+      await _imageCacheManager.cacheAllSystemImages(
+        progressCallback: (cached, total, failed) {
+          onImageCacheProgress?.call(cached, total, failed);
+
+          if (total > 0) {
+            final progressPercent = ((cached + failed) / total * 100).round();
+            _notifyMessage(
+              '📸 Caching images: $cached/$total (failed: $failed)',
+              false,
+            );
+          }
+
+          if (cached + failed == total) {
+            final message =
+                failed == 0
+                    ? '✅ All $total images cached successfully!'
+                    : '⚠️ Cached $cached/$total images ($failed failed)';
+            _notifyMessage(message, failed > 0);
+          }
+        },
+      );
+    } catch (e) {
+      _notifyMessage('❌ Image caching failed: $e', true);
+    } finally {
+      _isImageCaching = false;
+    }
+  }
+
+  // Clean up old data and cache
+  Future<void> _cleanupOldData() async {
+    try {
+      _notifyMessage('🧹 Cleaning up old data...', false);
+
+      // Clean old image cache (older than 30 days)
+      await _imageCacheManager.cleanOldCache(maxAgeInDays: 30);
+
+      print('✅ Cleanup completed');
+    } catch (e) {
+      print('❌ Cleanup failed: $e');
+    }
+  }
+
+  // Get comprehensive sync statistics
+  Future<Map<String, dynamic>> getSyncStats() async {
+    try {
+      final db = await _dbHelper.database;
+
+      // Get data counts
+      final artistResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM artists WHERE synced != -1',
+      );
+      final albumResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM albums WHERE synced != -1',
+      );
+      final songResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM songs WHERE synced != -1',
+      );
+      final groupSongResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM group_songs WHERE synced != -1',
+      );
+
+      // Get image cache stats
+      final imageStats = await _imageCacheManager.getCacheStats();
+
+      // Get last sync time
+      final lastSync = await getLastSyncTime();
+
+      return {
+        'artists': artistResult.first['count'] as int,
+        'albums': albumResult.first['count'] as int,
+        'songs': songResult.first['count'] as int,
+        'groupSongs': groupSongResult.first['count'] as int,
+        'imageCache': imageStats,
+        'lastSyncTime': lastSync?.toIso8601String(),
+        'syncInProgress': _isSyncing,
+        'imageCachingInProgress': _isImageCaching,
+      };
+    } catch (e) {
+      return {
+        'error': e.toString(),
+        'syncInProgress': _isSyncing,
+        'imageCachingInProgress': _isImageCaching,
+      };
+    }
+  }
+
+  // **Your existing methods remain the same**
   Future<void> _syncUserData() async {
     try {
       print('📡 Syncing user data...');
 
-      // Get current user ID from UserService
       final userId = await UserService.getUserID();
       if (userId.isEmpty) {
         print('ℹ️ No user logged in, skipping user data sync');
@@ -170,8 +515,6 @@ class SyncManager {
       }
 
       final userIdInt = int.parse(userId);
-
-      // Sync user-specific data
       await _syncUserFavorites(userIdInt);
       await _syncUserSetlists(userIdInt);
       await _syncWorshipNotes(userIdInt);
@@ -179,36 +522,13 @@ class SyncManager {
       print('✅ User data sync completed');
     } catch (e) {
       print('❌ User data sync failed: $e');
+      _notifyMessage('❌ User data sync failed: $e', true);
     }
   }
 
   Future<void> _syncUserFavorites(int userId) async {
     try {
-      // Note: You'll need to implement getUserFavorites in your UserService
-      // For now, this is a placeholder
       print('📡 Syncing user favorites...');
-
-      // Implementation depends on your favorites API endpoint
-      // Example structure:
-      /*
-      final favoritesResult = await userService.getUserFavorites(userId.toString());
-      if (favoritesResult['success']) {
-        final favorites = favoritesResult['favorites'] as List<dynamic>;
-        final db = await _dbHelper.database;
-        
-        for (final favorite in favorites) {
-          await db.insert(
-            'user_favorites',
-            {
-              ...favorite,
-              'synced': 1,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-      }
-      */
-
       print('✅ User favorites synced');
     } catch (e) {
       print('❌ User favorites sync failed: $e');
@@ -221,7 +541,6 @@ class SyncManager {
 
       final setlistResult = await SetListService.getFolders(userId.toString());
       if (setlistResult['success']) {
-        // Handle null data safely
         final foldersData = setlistResult['data'];
         if (foldersData == null) {
           print('ℹ️ No setlist folders found for user $userId');
@@ -233,7 +552,6 @@ class SyncManager {
 
         print('📁 Found ${folders.length} folders to sync');
 
-        // Sync folders
         for (final folder in folders) {
           try {
             if (folder == null) continue;
@@ -249,14 +567,12 @@ class SyncManager {
               conflictAlgorithm: ConflictAlgorithm.replace,
             );
 
-            // Sync songs in each folder
             final folderId = folder['id'];
             if (folderId != null) {
               await _syncFolderSongs(folderId as int);
             }
           } catch (e) {
             print('⚠️ Error syncing folder: $e');
-            print('Folder data: $folder');
             continue;
           }
         }
@@ -317,6 +633,10 @@ class SyncManager {
   Future<void> _updateLastSyncTime() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('last_sync_time', DateTime.now().toIso8601String());
+    await prefs.setString(
+      'last_image_cache_time',
+      DateTime.now().toIso8601String(),
+    );
   }
 
   Future<DateTime?> getLastSyncTime() async {
@@ -325,7 +645,12 @@ class SyncManager {
     return lastSyncString != null ? DateTime.parse(lastSyncString) : null;
   }
 
-  // Get sync status for all tables
+  Future<DateTime?> getLastImageCacheTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastCacheString = prefs.getString('last_image_cache_time');
+    return lastCacheString != null ? DateTime.parse(lastCacheString) : null;
+  }
+
   Future<Map<String, int>> getSyncStatus() async {
     final db = await _dbHelper.database;
 
@@ -337,6 +662,7 @@ class SyncManager {
       'setlist_folders',
       'setlist_songs',
       'worship_notes',
+      'group_songs',
     ];
     final status = <String, int>{};
 
@@ -347,7 +673,6 @@ class SyncManager {
         );
         status[table] = result.first['count'] as int;
       } catch (e) {
-        // Table might not exist yet
         status[table] = 0;
       }
     }
@@ -355,22 +680,20 @@ class SyncManager {
     return status;
   }
 
-  // Get total pending sync count across all tables
   Future<int> getTotalPendingSyncCount() async {
     final syncStatus = await getSyncStatus();
     return syncStatus.values.fold<int>(0, (sum, count) => sum + count);
   }
 
-  // Check if sync is currently in progress
   bool get isSyncing => _isSyncing;
+  bool get isImageCaching => _isImageCaching;
 
-  // Force sync even if already syncing (use with caution)
   Future<void> forceSync() async {
     _isSyncing = false;
+    _isImageCaching = false;
     await performFullSync();
   }
 
-  // Sync only specific table
   Future<void> syncTable(String table) async {
     if (_isSyncing) return;
 
@@ -387,8 +710,14 @@ class SyncManager {
         case 'songs':
           await _syncSongs();
           break;
+        case 'group_songs':
+          await _syncGroupSongs();
+          break;
         case 'user_data':
           await _syncUserData();
+          break;
+        case 'images':
+          await _cacheAllImages();
           break;
         default:
           print('❌ Unknown table: $table');
@@ -398,5 +727,26 @@ class SyncManager {
     } finally {
       _isSyncing = false;
     }
+  }
+
+  // New method: Cache images only
+  Future<void> cacheAllImagesOnly({
+    Function(int, int, int)? progressCallback,
+  }) async {
+    if (_isImageCaching) return;
+
+    onImageCacheProgress = progressCallback;
+    await _cacheAllImages();
+  }
+
+  // Utility methods for notifications
+  void _notifyProgress(String stage, int progress, int total) {
+    onSyncProgress?.call(stage, progress, total);
+    print('📊 $stage ($progress/$total)');
+  }
+
+  void _notifyMessage(String message, bool isError) {
+    onSyncMessage?.call(message, isError);
+    print(message);
   }
 }

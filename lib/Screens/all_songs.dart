@@ -6,6 +6,7 @@ import 'package:lyrics/OfflineService/connectivity_manager.dart';
 import 'package:lyrics/OfflineService/offline_artist_service.dart';
 import 'package:lyrics/Service/artist_service.dart';
 import 'package:lyrics/Service/language_service.dart';
+import 'package:lyrics/widgets/cached_image_widget.dart';
 import 'package:lyrics/widgets/main_background.dart';
 import 'package:lyrics/Screens/music_player.dart';
 
@@ -32,6 +33,7 @@ class _AllSongsState extends State<AllSongs> {
   @override
   void initState() {
     super.initState();
+    _initializeConnectivity();
     _loadArtistSongs();
   }
 
@@ -240,7 +242,7 @@ class _AllSongsState extends State<AllSongs> {
         ),
       );
     }
-
+    print('Songs loaded: $songs');
     return RefreshIndicator(
       onRefresh: _refreshSongs,
       color: Colors.white,
@@ -278,14 +280,14 @@ class _AllSongsState extends State<AllSongs> {
 
   void _navigateToMusicPlayer(dynamic songData) async {
     final lang = await getLyricscode();
-
+    print('Selected language code: $songData');
     // Navigate to music player with song data
     Navigator.push(
       context,
       MaterialPageRoute(
         builder:
             (context) => MusicPlayer(
-              backgroundImage: songData['image'] ?? 'assets/Rectangle 29.png',
+              backgroundImage: songData['image'],
               song: songData['songname'] ?? 'Unknown Song',
               artist: songData['artist_name'] ?? _getArtistName(),
               lyrics: songData[lang],
@@ -380,32 +382,40 @@ class SongCard extends StatelessWidget {
   Widget _buildImage() {
     final imageUrl = song['image'];
 
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      // Check if it's a network URL or asset path
-      if (imageUrl.startsWith('http') || imageUrl.startsWith('https')) {
-        return Image.network(
-          imageUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildPlaceholder();
-          },
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return _buildPlaceholder();
-          },
-        );
-      } else {
-        return Image.asset(
-          imageUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildPlaceholder();
-          },
-        );
-      }
-    }
-
-    return _buildPlaceholder();
+    return CachedImageWidget(
+      imageUrl: imageUrl,
+      width: 60,
+      height: 60,
+      fit: BoxFit.cover,
+      borderRadius: BorderRadius.circular(8),
+      placeholder: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white54),
+            ),
+          ),
+        ),
+      ),
+      errorWidget: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.music_note, color: Colors.white, size: 30),
+      ),
+    );
   }
 
   Widget _buildPlaceholder() {
@@ -525,27 +535,40 @@ class DetailedSongCard extends StatelessWidget {
   Widget _buildImage() {
     final imageUrl = song['image'];
 
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      if (imageUrl.startsWith('http') || imageUrl.startsWith('https')) {
-        return Image.network(
-          imageUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildPlaceholder();
-          },
-        );
-      } else {
-        return Image.asset(
-          imageUrl,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildPlaceholder();
-          },
-        );
-      }
-    }
-
-    return _buildPlaceholder();
+    return CachedImageWidget(
+      imageUrl: imageUrl,
+      width: 60,
+      height: 60,
+      fit: BoxFit.cover,
+      borderRadius: BorderRadius.circular(8),
+      placeholder: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white54),
+            ),
+          ),
+        ),
+      ),
+      errorWidget: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.music_note, color: Colors.white, size: 30),
+      ),
+    );
   }
 
   Widget _buildPlaceholder() {

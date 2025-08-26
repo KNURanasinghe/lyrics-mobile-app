@@ -3,6 +3,7 @@ import 'package:lyrics/OfflineService/offline_user_service.dart';
 import 'package:lyrics/Screens/music_player.dart';
 import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/Service/setlist_service.dart';
+import 'package:lyrics/widgets/cached_image_widget.dart';
 import 'package:lyrics/widgets/main_background.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
@@ -501,13 +502,13 @@ class _MySetListState extends State<MySetList> {
                       children: [
                         Icon(Icons.music_note, color: Colors.white54, size: 16),
                         const SizedBox(width: 4),
-                        Text(
-                          '${folder.songCount} songs',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                          ),
-                        ),
+                        // Text(
+                        //   '${folder.songCount} songs',
+                        //   style: const TextStyle(
+                        //     color: Colors.white54,
+                        //     fontSize: 12,
+                        //   ),
+                        // ),
                         if (_dataSource != null) ...[
                           const SizedBox(width: 12),
                           Container(
@@ -1022,7 +1023,7 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Song image
+              // Song image with cached loading
               Container(
                 width: 60,
                 height: 60,
@@ -1033,36 +1034,45 @@ class _FolderSongsScreenState extends State<FolderSongsScreen> {
                   borderRadius: BorderRadius.circular(8),
                   child:
                       song.songImage != null && song.songImage!.isNotEmpty
-                          ? (song.songImage!.startsWith('http')
-                              ? Image.network(
-                                song.songImage!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    color: Colors.grey[700],
-                                    child: const Icon(
-                                      Icons.music_note,
-                                      color: Colors.white,
-                                      size: 30,
+                          ? CachedImageWidget(
+                            imageUrl:
+                                song.songImage!.startsWith('http')
+                                    ? song.songImage
+                                    : null,
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            placeholder: Container(
+                              width: 60,
+                              height: 60,
+                              color: Colors.grey[700],
+                              child: Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white54,
                                     ),
-                                  );
-                                },
-                              )
-                              : Image.asset(
-                                song.songImage!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    color: Colors.grey[700],
-                                    child: const Icon(
-                                      Icons.music_note,
-                                      color: Colors.white,
-                                      size: 30,
-                                    ),
-                                  );
-                                },
-                              ))
+                                  ),
+                                ),
+                              ),
+                            ),
+                            errorWidget: Container(
+                              width: 60,
+                              height: 60,
+                              color: Colors.grey[700],
+                              child: const Icon(
+                                Icons.music_note,
+                                color: Colors.white,
+                                size: 30,
+                              ),
+                            ),
+                          )
                           : Container(
+                            width: 60,
+                            height: 60,
                             color: Colors.grey[700],
                             child: const Icon(
                               Icons.music_note,

@@ -39,9 +39,11 @@ class OfflineArtistService {
 
     if (isConnected) {
       try {
+        print('📡 Fetching artists for language: $language from server...');
         final result = await _onlineService.getArtistsByLanguage(language);
         if (result['success']) {
-          await _cacheArtists(result['artists']);
+          // Cache with proper language association
+          await _cacheArtistsByLanguage(result['artists'], language);
           return {...result, 'source': 'online'};
         }
       } catch (e) {
@@ -49,7 +51,32 @@ class OfflineArtistService {
       }
     }
 
+    // Always try cache when offline or when online fails
+    print('📱 Loading artists for language: $language from cache...');
     return await _getCachedArtistsByLanguage(language);
+  }
+
+  Future<void> _cacheArtistsByLanguage(
+    List<ArtistModel> artists,
+    String language,
+  ) async {
+    final db = await _dbHelper.database;
+
+    for (final artist in artists) {
+      final artistData =
+          artist.toJson()
+            ..['synced'] = 1
+            ..['language'] =
+                language // Ensure language is stored
+            ..['updated_at'] = DateTime.now().toIso8601String();
+
+      await db.insert(
+        'artists',
+        artistData,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    print('✅ Cached ${artists.length} artists for language: $language');
   }
 
   // Get artist by ID with offline support
@@ -202,22 +229,93 @@ class OfflineArtistService {
     String language,
   ) async {
     final db = await _dbHelper.database;
-    final maps = await db.query(
-      'artists',
-      where: 'language = ? AND synced != ?',
-      whereArgs: [language, -1],
-      orderBy: 'created_at DESC',
-    );
 
-    final artists = maps.map((map) => ArtistModel.fromJson(map)).toList();
+    try {
+      final maps = await db.query(
+        'artists',
+        where: 'language = ? AND synced != ?',
+        whereArgs: [language, -1],
+        orderBy: 'created_at DESC',
+      );
 
-    return {
-      'success': true,
-      'artists': artists,
-      'language': language,
-      'message': 'Artists loaded from cache',
-      'source': 'cache',
-    };
+      final artists =
+          maps
+              .map((map) {
+                try {
+                  return ArtistModel.fromJson(map);
+                } catch (e) {
+                  print('⚠️ Error parsing artist from cache: $e');
+                  print('Raw data: $map');
+                  return null;
+                }
+              })
+              .where((artist) => artist != null)
+              .cast<ArtistModel>()
+              .toList();
+
+      // If no artists found for this language, try to get any available artists
+      if (artists.isEmpty) {
+        print('⚠️ No cached artists found for language: $language');
+        final fallbackMaps = await db.query(
+          'artists',
+          where: 'synced != ?',
+          whereArgs: [-1],
+          orderBy: 'created_at DESC',
+          limit: 10,
+        );
+
+        final fallbackArtists =
+            fallbackMaps
+                .map((map) {
+                  try {
+                    return ArtistModel.fromJson(map);
+                  } catch (e) {
+                    return null;
+                  }
+                })
+                .where((artist) => artist != null)
+                .cast<ArtistModel>()
+                .toList();
+
+        return {
+          'success': true,
+          'artists': fallbackArtists,
+          'language': language,
+          'message': 'Showing cached artists (language fallback)',
+          'source': 'cache_fallback',
+        };
+      }
+
+      return {
+        'success': true,
+        'artists': artists,
+        'language': language,
+        'languageDisplayName': _getLanguageDisplayName(language),
+        'message': 'Artists loaded from cache',
+        'source': 'cache',
+      };
+    } catch (e) {
+      print('❌ Error loading cached artists: $e');
+      return {
+        'success': false,
+        'artists': <ArtistModel>[],
+        'message': 'Error loading cached artists: $e',
+        'source': 'cache_error',
+      };
+    }
+  }
+
+  String _getLanguageDisplayName(String languageCode) {
+    switch (languageCode.toLowerCase()) {
+      case 'en':
+        return 'English';
+      case 'si':
+        return 'Sinhala';
+      case 'ta':
+        return 'Tamil';
+      default:
+        return languageCode.toUpperCase();
+    }
   }
 
   Future<Map<String, dynamic>> _getCachedArtistById(int id) async {
