@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lyrics/Service/setting_service.dart' show FontSettingsService;
-import 'package:lyrics/Service/color_service.dart'; // Add this import
+import 'package:lyrics/Service/color_service.dart';
+import 'package:lyrics/Service/theme_service.dart'; // Add this import
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -36,14 +37,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final boldText = await FontSettingsService.getBoldText();
       final lyricsColor = await ColorService.getColor(); // Load color
 
+      final theme = await ThemeService.getTheme();
+      final automaticTheme = await ThemeService.getAutomaticTheme();
+
       setState(() {
         lyricsFontSize = fontSize;
         isBoldText = boldText;
         selectedLyricsColor = lyricsColor; // Set color
+        selectedTheme = theme;
+        isAutomaticTheme = automaticTheme;
       });
     } catch (e) {
       print('Error loading settings: $e');
     }
+  }
+
+  Future<void> _saveTheme(String theme) async {
+    _markAsChanged();
+    await ThemeService.saveTheme(theme);
+
+    // Auto-save appropriate lyrics color based on theme
+    if (theme == 'Light') {
+      await _saveLyricsColor(Colors.black);
+    } else if (theme == 'Dark') {
+      await _saveLyricsColor(Colors.white);
+    }
+
+    setState(() {
+      selectedTheme = theme;
+    });
+  }
+
+  Future<void> _saveAutomaticTheme(bool isAutomatic) async {
+    _markAsChanged();
+    await ThemeService.saveAutomaticTheme(isAutomatic);
+
+    // Auto-save lyrics color based on system theme if automatic is enabled
+    if (isAutomatic) {
+      final systemBrightness =
+          WidgetsBinding.instance.window.platformBrightness;
+      final Color autoColor =
+          systemBrightness == Brightness.dark ? Colors.white : Colors.black;
+      await _saveLyricsColor(autoColor);
+    }
+
+    setState(() {
+      isAutomaticTheme = isAutomatic;
+    });
   }
 
   Future<void> _saveFontSize(double fontSize) async {
@@ -270,9 +310,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 isAutomaticTheme
                                     ? null
                                     : (value) {
-                                      setState(() {
-                                        selectedTheme = value!;
-                                      });
+                                      if (value != null) {
+                                        _saveTheme(value);
+                                      }
                                     },
                             activeColor: Colors.blue,
                           ),
@@ -297,9 +337,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 isAutomaticTheme
                                     ? null
                                     : (value) {
-                                      setState(() {
-                                        selectedTheme = value!;
-                                      });
+                                      if (value != null) {
+                                        _saveTheme(value);
+                                      }
                                     },
                             activeColor: Colors.blue,
                           ),
@@ -323,9 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Switch(
                         value: isAutomaticTheme,
                         onChanged: (value) {
-                          setState(() {
-                            isAutomaticTheme = value;
-                          });
+                          _saveAutomaticTheme(value);
                         },
                         activeColor: Colors.white,
                         activeTrackColor: Colors.blue,

@@ -1,6 +1,7 @@
 import 'package:lyrics/OfflineService/connectivity_manager.dart';
 import 'package:lyrics/OfflineService/database_helper.dart';
 import 'package:lyrics/Service/album_service.dart';
+import 'package:lyrics/Service/language_service.dart';
 import 'package:sqflite/sqflite.dart';
 
 class OfflineAlbumService {
@@ -415,7 +416,48 @@ class OfflineAlbumService {
     final db = await _dbHelper.database;
 
     try {
-      final maps = await db.rawQuery('''
+      // Get the current language to filter by
+      final selectedLanguage = await LanguageService.getLanguage();
+      final languageCode = LanguageService.getLanguageCode(selectedLanguage);
+
+      // First try to get latest albums by language through artist relationship
+      var maps = await db.rawQuery(
+        '''
+      SELECT albums.*, 
+             COALESCE(albums.artist_name, artists.name) as artist_name,
+             COALESCE(albums.artist_image, artists.image) as artist_image,
+             artists.language
+      FROM albums 
+      LEFT JOIN artists ON albums.artist_id = artists.id 
+      WHERE artists.language = ? AND albums.synced != -1
+      ORDER BY albums.created_at DESC 
+      LIMIT 10
+    ''',
+        [languageCode],
+      );
+
+      // If no results and we have a stored language in albums, try that
+      if (maps.isEmpty) {
+        maps = await db.rawQuery(
+          '''
+        SELECT albums.*, 
+               COALESCE(albums.artist_name, artists.name) as artist_name,
+               COALESCE(albums.artist_image, artists.image) as artist_image,
+               COALESCE(albums.language, artists.language) as language
+        FROM albums 
+        LEFT JOIN artists ON albums.artist_id = artists.id 
+        WHERE albums.language = ? AND albums.synced != -1
+        ORDER BY albums.created_at DESC 
+        LIMIT 10
+      ''',
+          [languageCode],
+        );
+      }
+
+      // If still no results for this language, get fallback albums
+      if (maps.isEmpty) {
+        print('⚠️ No cached latest albums found for language: $languageCode');
+        maps = await db.rawQuery('''
         SELECT albums.*, 
                COALESCE(albums.artist_name, artists.name) as artist_name,
                COALESCE(albums.artist_image, artists.image) as artist_image
@@ -425,6 +467,7 @@ class OfflineAlbumService {
         ORDER BY albums.created_at DESC 
         LIMIT 10
       ''');
+      }
 
       final albums =
           maps
@@ -446,6 +489,7 @@ class OfflineAlbumService {
       return {
         'success': true,
         'albums': albums,
+        'language': languageCode,
         'message': 'Latest albums loaded from cache',
         'source': 'cache',
       };

@@ -25,11 +25,13 @@ import 'package:lyrics/Screens/all_songs.dart';
 import 'package:lyrics/Screens/artist_page.dart';
 import 'package:lyrics/Screens/language_screen.dart';
 import 'package:lyrics/Screens/music_player.dart';
+import 'package:lyrics/Screens/worship_team.dart';
 import 'package:lyrics/Service/album_service.dart';
 import 'package:lyrics/Service/artist_service.dart';
 import 'package:lyrics/Service/language_service.dart';
 import 'package:lyrics/Service/search_service.dart';
 import 'package:lyrics/Service/song_service.dart';
+import 'package:lyrics/Service/theme_service.dart';
 import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/widgets/cached_image_widget.dart';
 import 'package:lyrics/widgets/main_background.dart';
@@ -51,6 +53,9 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   List<dynamic> _searchResults = [];
+
+  String selectedTheme = 'Dark';
+  bool isAutomaticTheme = false;
 
   // API Services
   // final ArtistService _artistService = ArtistService();
@@ -98,9 +103,23 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _searchService = OfflineSearchService(baseUrl: 'http://145.223.21.62:3100');
     _initializeConnectivity();
+    _loadThemeSettings();
     _loadData();
   }
 
+  Future<void> _loadThemeSettings() async {
+    try {
+      final theme = await ThemeService.getTheme();
+      final automaticTheme = await ThemeService.getAutomaticTheme();
+
+      setState(() {
+        selectedTheme = theme;
+        isAutomaticTheme = automaticTheme;
+      });
+    } catch (e) {
+      print('Error loading theme settings: $e');
+    }
+  }
   // Future<void> _loadData() async {
   //   setState(() {
   //     _isLoading = true;
@@ -1329,7 +1348,7 @@ class _HomePageState extends State<HomePage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => const AblumPage(),
+                              builder: (context) => const WorshipTeam(),
                             ),
                           );
                         },
@@ -1415,15 +1434,46 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildCustomDrawer() {
+    final drawerBgColor = ThemeService.getDrawerBackgroundColor(
+      selectedTheme,
+      isAutomaticTheme,
+    );
+    final headerBgColor = ThemeService.getProfileHeaderColor(
+      selectedTheme,
+      isAutomaticTheme,
+    );
+    Color fColor;
+
+    if (isAutomaticTheme) {
+      // Use system theme to determine color
+      final systemBrightness =
+          WidgetsBinding.instance.window.platformBrightness;
+      fColor =
+          systemBrightness == Brightness.dark ? Colors.white : Colors.black;
+    } else {
+      // Use selected theme
+      fColor = selectedTheme == 'Light' ? Colors.black : Colors.white;
+    }
     return Drawer(
-      backgroundColor: Color(0xFF909090),
+      backgroundColor: drawerBgColor,
       child: Column(
         children: [
           // Profile Header - FIXED SECTION
           Container(
             height: MediaQuery.of(context).size.height * 0.2,
             padding: EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 20),
-            decoration: BoxDecoration(color: Color(0xFF555555)),
+            decoration: BoxDecoration(
+              color: headerBgColor,
+              image: DecorationImage(
+                image: AssetImage('assets/drawer.jpg'),
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withOpacity(0.4),
+                  BlendMode.srcOver, // Try this instead of BlendMode.darken
+                ),
+              ),
+            ),
             child: Row(
               children: [
                 // Profile Avatar and Name Column
@@ -1629,9 +1679,8 @@ class _HomePageState extends State<HomePage> {
                     );
 
                     if (result != null) {
-                      print(
-                        'Language changed from $currentLanguage to $result',
-                      );
+                      // Reload theme settings after returning from settings
+                      await _loadThemeSettings();
                       _loadData(); // Refresh all data
                     }
                   },
@@ -1668,12 +1717,12 @@ class _HomePageState extends State<HomePage> {
                         textAlign: TextAlign.center,
                         'A Vision by Johnson Shan',
 
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: fColor),
                       ),
                       Text(
                         textAlign: TextAlign.center,
                         'Designed & Developed by JS Christian Productions ',
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: fColor),
                       ),
                       Text(
                         textAlign: TextAlign.center,
@@ -1683,7 +1732,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         textAlign: TextAlign.center,
                         '© 2025 The Rock of Praise. All rights reserved.',
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: fColor),
                       ),
                     ],
                   ),
@@ -1703,14 +1752,26 @@ class _HomePageState extends State<HomePage> {
     Function? onTap,
     bool isPremium = false,
   }) {
+    Color fColor;
+
+    if (isAutomaticTheme) {
+      // Use system theme to determine color
+      final systemBrightness =
+          WidgetsBinding.instance.window.platformBrightness;
+      fColor =
+          systemBrightness == Brightness.dark ? Colors.white : Colors.black;
+    } else {
+      // Use selected theme
+      fColor = selectedTheme == 'Light' ? Colors.black : Colors.white;
+    }
+
     return ListTile(
-      leading: Icon(icon, color: Colors.white, size: 24),
-      trailing:
-          isPremium ? Icon(Icons.lock, color: Colors.white, size: 20) : null,
+      leading: Icon(icon, color: fColor, size: 24),
+      trailing: isPremium ? Icon(Icons.lock, color: fColor, size: 20) : null,
       title: Text(
         title,
         style: TextStyle(
-          color: Colors.white,
+          color: fColor,
           fontSize: 22,
           // fontWeight: FontWeight.w500,
         ),

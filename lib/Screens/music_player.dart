@@ -1309,48 +1309,50 @@ class _MusicPlayerState extends State<MusicPlayer> {
             // Background image
             Positioned.fill(
               child:
-                  widget.backgroundImage!.startsWith('http') ||
-                          widget.backgroundImage!.startsWith('https')
-                      ? CachedImageWidget(
-                        imageUrl: widget.backgroundImage,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.fitHeight,
-                        placeholder: Container(
-                          color: Colors.grey[800],
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white54,
+                  widget.backgroundImage != null
+                      ? widget.backgroundImage!.startsWith('http') ||
+                              widget.backgroundImage!.startsWith('https')
+                          ? CachedImageWidget(
+                            imageUrl: widget.backgroundImage ?? '',
+                            width: double.infinity,
+                            height: double.infinity,
+                            fit: BoxFit.fitHeight,
+                            placeholder: Container(
+                              color: Colors.grey[800],
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white54,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        errorWidget: Container(
-                          color: Colors.grey[800],
-                          child: const Icon(
-                            Icons.music_note,
-                            color: Colors.white54,
-                            size: 80,
-                          ),
-                        ),
-                      )
-                      : Image.asset(
-                        widget.backgroundImage!,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.fitHeight,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[800],
-                            child: const Icon(
-                              Icons.music_note,
-                              color: Colors.white54,
-                              size: 80,
+                            errorWidget: Container(
+                              color: Colors.grey[800],
+                              child: const Icon(
+                                Icons.music_note,
+                                color: Colors.white54,
+                                size: 80,
+                              ),
                             ),
-                          );
-                        },
-                      ),
+                          )
+                          : Image.asset(
+                            widget.backgroundImage! ?? '',
+                            width: double.infinity,
+                            height: double.infinity,
+                            fit: BoxFit.fitHeight,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.grey[800],
+                                child: const Icon(
+                                  Icons.music_note,
+                                  color: Colors.white54,
+                                  size: 80,
+                                ),
+                              );
+                            },
+                          )
+                      : Image.asset(''),
             ),
 
             // Gradient overlay
