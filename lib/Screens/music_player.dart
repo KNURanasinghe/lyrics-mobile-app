@@ -273,7 +273,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
           _dataSource = result['source'];
         });
 
-        _showDataSourceIndicator(_dataSource ?? 'unknown');
+        // _showDataSourceIndicator(_dataSource ?? 'unknown');
       }
     } catch (e) {
       print('Error checking favorite status: $e');
@@ -362,37 +362,37 @@ class _MusicPlayerState extends State<MusicPlayer> {
     }
   }
 
-  void _showDataSourceIndicator(String source) {
-    if (!mounted) return;
+  // void _showDataSourceIndicator(String source) {
+  //   if (!mounted) return;
 
-    String message;
-    Color color;
+  //   String message;
+  //   Color color;
 
-    switch (source) {
-      case 'online':
-        message = '🌐 Live data';
-        color = Colors.green;
-        break;
-      case 'cache':
-        message = '📱 Cached data';
-        color = Colors.orange;
-        break;
-      case 'local':
-        message = '💾 Local data';
-        color = Colors.blue;
-        break;
-      default:
-        return;
-    }
+  //   switch (source) {
+  //     case 'online':
+  //       message = '🌐 Live data';
+  //       color = Colors.green;
+  //       break;
+  //     case 'cache':
+  //       message = '📱 Cached data';
+  //       color = Colors.orange;
+  //       break;
+  //     case 'local':
+  //       message = '💾 Local data';
+  //       color = Colors.blue;
+  //       break;
+  //     default:
+  //       return;
+  //   }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: Duration(seconds: 1),
-        backgroundColor: color,
-      ),
-    );
-  }
+  //   ScaffoldMessenger.of(context).showSnackBar(
+  //     SnackBar(
+  //       content: Text(message),
+  //       duration: Duration(seconds: 1),
+  //       backgroundColor: color,
+  //     ),
+  //   );
+  // }
 
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -545,7 +545,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
           _dataSource = result['source'];
         });
 
-        _showDataSourceIndicator(_dataSource ?? 'unknown');
+        //_showDataSourceIndicator(_dataSource ?? 'unknown');
 
         if (lyricsData == null) {
           print('Lyrics data is null');

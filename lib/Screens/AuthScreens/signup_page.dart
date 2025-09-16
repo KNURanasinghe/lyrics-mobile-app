@@ -254,6 +254,7 @@ class _SignupPageState extends State<SignupPage> {
                     controller: _passwordController,
                     hintText: 'Password',
                     icon: Icons.lock,
+                    isPassword: true,
                     // isPassword: true,
                   ),
                   SizedBox(height: MediaQuery.of(context).size.height * 0.013),

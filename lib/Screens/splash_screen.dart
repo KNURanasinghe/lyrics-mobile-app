@@ -14,23 +14,37 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
+    getProfile();
     Future.delayed(const Duration(seconds: 3), () async {
       // Navigate to the next screen after the splash screen
       // For example, you can use Navigator.pushReplacementNamed(context, '/home');
+
       final page = await UserService.getUserID();
       print('pageeeee $page');
       if (page != '') {
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => HomePage()),
         );
       } else {
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const LoginPage()),
         );
       }
     });
+  }
+
+  Future<void> getProfile() async {
+    final UserService userService = UserService();
+    final page = await UserService.getUserID();
+    try {
+      final response = await userService.getFullProfile(page);
+      print('response from splash $response');
+      if (response['success']) {
+        await UserService.saveIsPremium(response['profile']['isPremium']);
+      }
+    } catch (e) {}
   }
 
   @override

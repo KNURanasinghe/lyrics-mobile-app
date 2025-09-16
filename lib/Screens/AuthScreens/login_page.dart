@@ -186,6 +186,7 @@ class _LoginPageState extends State<LoginPage> {
                     controller: _passwordController,
                     hintText: 'Password',
                     icon: Icons.lock,
+                    isPassword: true,
                   ),
                   Align(
                     alignment: Alignment.centerRight,

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:lyrics/OfflineService/connectivity_manager.dart';
 import 'package:lyrics/OfflineService/offline_album_service.dart';
+import 'package:lyrics/Screens/DrawerScreens/premium_screen.dart';
 import 'package:lyrics/Service/album_service.dart';
 import 'package:lyrics/Service/language_service.dart';
 import 'package:lyrics/Screens/all_songs.dart';
+import 'package:lyrics/Service/user_service.dart';
 import 'package:lyrics/widgets/cached_image_widget.dart';
 import 'package:lyrics/widgets/main_background.dart';
 
@@ -16,6 +19,7 @@ class AblumPage extends StatefulWidget {
 class _AblumPageState extends State<AblumPage> {
   final OfflineAlbumService _albumService = OfflineAlbumService();
   final TextEditingController _searchController = TextEditingController();
+  final ConnectivityManager _connectivityManager = ConnectivityManager();
 
   List<AlbumModel> allAlbums = [];
   List<AlbumModel> filteredAlbums = [];
@@ -35,6 +39,380 @@ class _AblumPageState extends State<AblumPage> {
     _searchController.dispose();
     _albumService.dispose();
     super.dispose();
+  }
+
+  void _showPremiumDialog({
+    bool isOffline = false,
+    String feature = 'this content',
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.amber.withOpacity(0.3), width: 1),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  isOffline ? Icons.wifi_off : Icons.star,
+                  color: Colors.amber,
+                  size: 24,
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isOffline ? 'Offline Access Restricted' : 'Premium Required',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Main message
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.amber.withOpacity(0.1),
+                        Colors.orange.withOpacity(0.1),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (isOffline) ...[
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.wifi_off,
+                              color: Colors.orange,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'You are currently offline',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'To access $feature while offline, you need a Premium subscription.',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            height: 1.4,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Connect to the internet and upgrade to Premium for full offline access.',
+                          style: TextStyle(color: Colors.white60, fontSize: 14),
+                        ),
+                      ] else ...[
+                        Text(
+                          'Access to $feature requires a Premium subscription.',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                SizedBox(height: 20),
+
+                // Premium features list
+                Text(
+                  'Premium Features Include:',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                SizedBox(height: 12),
+
+                ...premiumFeatures.map(
+                  (feature) => _buildPremiumFeatureItem(feature),
+                ),
+
+                SizedBox(height: 16),
+
+                // Special offline benefits
+                if (isOffline) ...[
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.offline_bolt,
+                              color: Colors.blue,
+                              size: 16,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Offline Benefits',
+                              style: TextStyle(
+                                color: Colors.blue,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          '• Access all content without internet\n• Auto-sync when connection returns\n• Seamless offline experience',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            // Maybe Later button
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(foregroundColor: Colors.white70),
+              child: Text(
+                isOffline ? 'Use Online Only' : 'Maybe Later',
+                style: TextStyle(fontSize: 14),
+              ),
+            ),
+
+            // Connect to Internet button (only for offline)
+            if (isOffline) ...[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _showConnectivityInstructions();
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.blue),
+                child: Text(
+                  'Connect to Internet',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+
+            // Buy Now / Upgrade button
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _navigateToPremiumUpgrade();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber,
+                foregroundColor: Colors.black,
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.upgrade, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    isOffline ? 'Get Premium' : 'Buy Now',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Premium features list
+  final List<String> premiumFeatures = [
+    'Unlimited offline access',
+    'Download songs & albums',
+    'No advertisements',
+    'High quality audio',
+    'Exclusive premium content',
+    'Priority customer support',
+  ];
+
+  Widget _buildPremiumFeatureItem(String feature) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: Colors.amber,
+              shape: BoxShape.circle,
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              feature,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Navigate to premium upgrade screen
+  void _navigateToPremiumUpgrade() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => PremiumScreen()),
+    );
+  }
+
+  // Show connectivity instructions
+  void _showConnectivityInstructions() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: Row(
+            children: [
+              Icon(Icons.wifi, color: Colors.blue, size: 24),
+              SizedBox(width: 12),
+              Text(
+                'Connect to Internet',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'To upgrade to Premium and enable offline features:',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              SizedBox(height: 16),
+              _buildConnectivityStep('1', 'Connect to Wi-Fi or mobile data'),
+              _buildConnectivityStep('2', 'Tap "Get Premium" to upgrade'),
+              _buildConnectivityStep('3', 'Enjoy unlimited offline access'),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Premium subscription requires internet connection for initial setup.',
+                        style: TextStyle(color: Colors.blue, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Got it', style: TextStyle(color: Colors.blue)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildConnectivityStep(String step, String description) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                step,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              description,
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadAllAlbums() async {
@@ -101,7 +479,16 @@ class _AblumPageState extends State<AblumPage> {
     });
   }
 
-  void _navigateToAlbumSongs(AlbumModel album) {
+  void _navigateToAlbumSongs(AlbumModel album) async {
+    final isConnected = await _connectivityManager.isConnected();
+    final isPremiumStr = await UserService.getIsPremium();
+    final isPremium = isPremiumStr == '1';
+
+    // Check for offline + non-premium
+    if (!isConnected && !isPremium) {
+      _showPremiumDialog(isOffline: true, feature: 'artist content');
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(

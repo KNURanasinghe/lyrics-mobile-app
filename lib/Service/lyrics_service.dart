@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Service to handle "How to Read Lyrics" preferences
 class HowToReadLyricsService {
   static const String _lyricsFormatKey = 'lyrics_reading_format';
-  static const String _defaultFormat = 'tamil_only';
+  static const String _defaultFormat = 'english_only';
 
   // Save the selected lyrics reading format
   static Future<void> saveLyricsFormat(String format) async {

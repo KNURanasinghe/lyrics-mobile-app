@@ -63,13 +63,13 @@ class _AddNoteScreenState extends State<AddNoteScreen> {
         setState(() {});
 
         // Show connectivity status
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
-            duration: Duration(seconds: 2),
-            backgroundColor: _isOnline ? Colors.green : Colors.orange,
-          ),
-        );
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   SnackBar(
+        //     content: Text(_isOnline ? '🌐 Back online' : '📱 Offline mode'),
+        //     duration: Duration(seconds: 2),
+        //     backgroundColor: _isOnline ? Colors.green : Colors.orange,
+        //   ),
+        // );
 
         // Sync when coming back online
         if (_isOnline && wasOffline) {

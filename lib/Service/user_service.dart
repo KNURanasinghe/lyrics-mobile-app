@@ -158,7 +158,9 @@ class UserService {
         // Save user ID after successful login
         await saveuserID(responseData['user']['id']);
         await saveIsPremium(responseData['user']['isPremium']);
-        print('user login data ${responseData['user']}');
+        print(
+          'user login data ${responseData['user']}  ${responseData['user']['isPremium']}',
+        );
         return {
           'success': true,
           'message': responseData['message'],
@@ -277,6 +279,7 @@ class UserService {
       final responseData = json.decode(response.body);
       print('results $responseData');
       if (response.statusCode == 200) {
+        saveIsPremium(responseData['user']['isPremium']);
         return {'success': true, 'profile': responseData['user']};
       } else {
         return {

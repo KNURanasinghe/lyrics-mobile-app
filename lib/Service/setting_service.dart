@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class FontSettingsService {
   static const String _fontSizeKey = 'lyrics_font_size';
   static const String _boldTextKey = 'lyrics_bold_text';
-  static const double _defaultFontSize = 18.0;
+  static const double _defaultFontSize = 12.0;
   static const bool _defaultBoldText = false;
 
   // Font size options

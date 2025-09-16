@@ -83,9 +83,7 @@ class _ArtistAlbumSongDetailsState extends State<ArtistAlbumSongDetails> {
 
   Future<void> _loadArtistAlbums() async {
     try {
-      final result = await _onlineArtistService.getArtistAlbums(
-        widget.artistId,
-      );
+      final result = await _artistService.getArtistAlbums(widget.artistId);
       if (result['success']) {
         final List<AlbumModel> loadedAlbums =
             (result['albums'] as List<dynamic>)
@@ -114,7 +112,7 @@ class _ArtistAlbumSongDetailsState extends State<ArtistAlbumSongDetails> {
 
   Future<void> _loadArtistSongs() async {
     try {
-      final result = await _onlineArtistService.getArtistSongs(widget.artistId);
+      final result = await _artistService.getArtistSongs(widget.artistId);
       if (result['success']) {
         final List<SongModel> loadedSongs =
             (result['songs'] as List<dynamic>)
