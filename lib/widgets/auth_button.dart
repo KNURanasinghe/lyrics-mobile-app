@@ -19,7 +19,7 @@ class AuthButton extends StatelessWidget {
         GestureDetector(
           onTap: isLoading ? null : () => onTap(),
           child: Container(
-            width: 348,
+            width: MediaQuery.of(context).size.width * 0.85,
             height: 55,
             decoration: ShapeDecoration(
               color: isLoading ? Colors.grey : const Color(0xFFB71C1C),

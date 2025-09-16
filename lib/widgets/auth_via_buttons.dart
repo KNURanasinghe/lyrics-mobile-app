@@ -12,7 +12,7 @@ class AuthViaButtons extends StatelessWidget {
         Opacity(
           opacity: 0.50,
           child: Container(
-            width: 159,
+            width: MediaQuery.of(context).size.width * 0.425,
             height: 54,
             decoration: ShapeDecoration(
               color: Colors.white,

@@ -21,7 +21,7 @@ class AuthViaBigButton extends StatelessWidget {
       child: Opacity(
         opacity: 0.50,
         child: Container(
-          width: 348,
+          width: MediaQuery.of(context).size.width * 0.85,
           height: 62,
           decoration: ShapeDecoration(
             color: const Color(0xFFD9D9D9),

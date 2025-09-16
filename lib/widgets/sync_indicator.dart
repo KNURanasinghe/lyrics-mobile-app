@@ -5,6 +5,8 @@ import 'package:lyrics/OfflineService/connectivity_manager.dart';
 import 'package:lyrics/OfflineService/sync_manager.dart';
 
 class SyncIndicator extends StatefulWidget {
+  const SyncIndicator({super.key});
+
   @override
   _SyncIndicatorState createState() => _SyncIndicatorState();
 }
