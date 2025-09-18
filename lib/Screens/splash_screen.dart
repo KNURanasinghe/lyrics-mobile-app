@@ -52,9 +52,10 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: SingleChildScrollView(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
-              'assets/splash.png',
+              'assets/1202.png',
               fit: BoxFit.cover,
               width: double.infinity,
               height: MediaQuery.of(context).size.height,
